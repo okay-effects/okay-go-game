@@ -1,4 +1,4 @@
 # SPRINT — okay-go-game
 
-Nothing in flight. Done 2026-11-04: BACKLOG 5c (the engine's information at the bottom of the game) and 5b (the CPU
-no longer the limit: one scan a leaf, a pipeline). Next: BACKLOG 5d — the GPU kernels.
+Nothing in flight. Done 2026-11-04: BACKLOG 5c, 5b, 5d — the engine's information, the CPU's part, the tiled
+convolution: ~3 200 positions a move on 9 x 9, ~2 600 on 19 x 19. Next: BACKLOG 6 — a network of our own (mlx-scala).

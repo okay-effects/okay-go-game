@@ -173,3 +173,9 @@ legal points and the ko points by Zobrist hashes (the rules' superko by hashes t
 and prepared while the GPU reads one. The batch 16 on 9 x 9, 8 on larger boards. On 19 x 19 the CPU's part of a batch
 from 21.5 + 14 ms to 0.6 + 3 ms; positions a move from ~430 to up to ~800 (390–800 with the GPU shared by other
 work); on 9 x 9 up to ~1 150.
+
+5d, done: the convolution tiled (`Kernels.convTiled`: an implicit matrix product, a workgroup of 16 x 16 threads a
+tile of 64 channels x 64 points, 4 x 4 a thread, the sum taken 16 at a time through workgroup memory, im2col on the
+fly). A batch of 8 on 19 x 19 from 38 to 11.6 ms, 13 x 13 21.6 -> 8.8, 9 x 9 14.4 -> 11.3 (its time now the dispatch
+and the read back), the same results. The batch 32 on 9 x 9, 16 on the larger boards: ~3 200 positions a move on
+9 x 9, ~2 600 on 19 x 19 (were ~1 150 and ~800).

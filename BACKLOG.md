@@ -27,9 +27,13 @@ In the operator's order (2026-11-04: "write everything in the backlog and do it 
    next batch prepared while the GPU reads one); the batch 16 on 9 x 9, 8 on larger boards. 19 x 19: the CPU's part
    of a batch 21.5 + 14 ms -> 0.6 + 3 ms; ~430 -> up to ~800 positions a move (the GPU shared with other work on
    this Mac: 390–800); 9 x 9 up to ~1 150. The GPU is now the limit.
-5d. [ ] NEXT: the GPU kernels faster on 19 x 19 — the convolution tiled in workgroup memory (inputs and weights
+5d. [x] The GPU kernels faster on 19 x 19 — the convolution tiled in workgroup memory (inputs and weights
    shared by a workgroup), maybe f16 where the adapter has it (checked against the reference); measured by
    `?selftest`.
+   Done: the convolution tiled (64 channels x 64 points a workgroup of 16 x 16, 4 x 4 a thread, slices of 16 in
+   workgroup memory, im2col on the fly): a batch of 8 on 19 x 19 38 -> 11.6 ms, the same results (1.3e-5 from the
+   reference); the batch 32 on 9 x 9 and 16 on larger boards: ~3 200 positions a move on 9 x 9, ~2 600 on 19 x 19
+   (were ~1 150 and ~800). f16 not needed for now.
 6. [ ] Step 4: a network of our own, trained on the Mac by mlx-scala (supervised on games the search plays), in the
    same format; measured against KataGo's.
 7. [ ] Step 5: okay-inlay — the legal-move mask (and liberties) as weights of the network: no illegal move without

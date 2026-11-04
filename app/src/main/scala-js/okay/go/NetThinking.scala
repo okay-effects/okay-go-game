@@ -24,9 +24,9 @@ final class NetThinking(net: () => Future[Option[Engine]], random: scala.util.Ra
     case 9 => 1500
     case 13 => 2500
     case _ => 4000
-  /** the batch: 16 on 9 x 9 (the GPU not full: ~1.3 ms a position), 8 on the larger boards (full: a larger batch only
-   * makes each wait longer) — measured in Chromium on Apple Metal 3 */
-  private def batchOf(size: Int): Int = if size <= 9 then 16 else 8
+  /** the batch: 32 on 9 x 9, 16 on the larger boards — with the tiled convolution the best of those tried (8, 16, 32)
+   * in Chromium on Apple Metal 3 */
+  private def batchOf(size: Int): Int = if size <= 9 then 32 else 16
   private def mb(bytes: Long) = f"${bytes / 1048576.0}%.1f MB"
 
   /** what the network's search did for one move */

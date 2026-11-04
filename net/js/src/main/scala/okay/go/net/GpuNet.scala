@@ -21,7 +21,7 @@ final class GpuNet private (device: js.Dynamic, model: Model, val adapter: Strin
   private def pipeline(code: String): js.Dynamic =
     device.createComputePipeline(literal(layout = "auto",
       compute = literal(module = device.createShaderModule(literal(code = code)), entryPoint = "main")))
-  private val convP = pipeline(Kernels.conv); private val normP = pipeline(Kernels.norm)
+  private val convP = pipeline(Kernels.convTiled); private val normP = pipeline(Kernels.norm)
   private val biasP = pipeline(Kernels.channelBias); private val poolP = pipeline(Kernels.pool)
   private val matP = pipeline(Kernels.matmul)
 
@@ -40,8 +40,9 @@ final class GpuNet private (device: js.Dynamic, model: Model, val adapter: Strin
     if got != null then got else { val b = upload(a); weights.put(a, b); b }
   private val noBias = upload(Array(0f, 0f, 0f, 0f))
 
-  /** one dispatch: its pipeline, its bind group, its workgroups */
-  private final case class Step(pipeline: js.Dynamic, group: js.Dynamic, threads: Int)
+  /** one dispatch: its pipeline, its bind group, and its workgroups — by threads (64 a group), or given (x, y, z) */
+  private final case class Step(pipeline: js.Dynamic, group: js.Dynamic, threads: Int,
+      grid: Option[(Int, Int, Int)] = None)
   private final class Plan(val batch: Int, val n: Int, val steps: Vector[Step], val inSp: js.Dynamic,
       val inGl: js.Dynamic, val policy: js.Dynamic, val pass: js.Dynamic, val value: js.Dynamic)
   private val plans = scala.collection.mutable.Map.empty[(Int, Int), Plan]
@@ -63,7 +64,7 @@ final class GpuNet private (device: js.Dynamic, model: Model, val adapter: Strin
     def vec(c: Int) = buffer(batch * c, STORAGE | COPY_SRC)
     def conv(c: Conv, in: js.Dynamic, out: js.Dynamic, acc: Boolean): Unit =
       steps += Step(convP, group(convP, uniform(batch, n, c.in, c.out, c.ky, c.kx, if acc then 1 else 0), in, of(c.w),
-        out), batch * c.out * a)
+        out), 0, Some(((a + 63) / 64, (c.out + 63) / 64, batch)))
     def norm(b: Norm, in: js.Dynamic, out: js.Dynamic): Unit =
       steps += Step(normP, group(normP, uniform(batch, b.channels, a), in, of(b.scale), of(b.bias), out),
         batch * b.channels * a)
@@ -119,8 +120,11 @@ final class GpuNet private (device: js.Dynamic, model: Model, val adapter: Strin
     val pass = enc.beginComputePass()
     for s <- p.steps do
       pass.setPipeline(s.pipeline); pass.setBindGroup(0, s.group)
-      val wg = (s.threads + 63) / 64
-      if wg <= 65535 then pass.dispatchWorkgroups(wg) else pass.dispatchWorkgroups(65535, (wg + 65534) / 65535)
+      s.grid match
+        case Some((x, y, z)) => pass.dispatchWorkgroups(x, y, z)
+        case None =>
+          val wg = (s.threads + 63) / 64
+          if wg <= 65535 then pass.dispatchWorkgroups(wg) else pass.dispatchWorkgroups(65535, (wg + 65534) / 65535)
     pass.end()
     val readP = buffer(batch * a, MAP_READ | COPY_DST, kept = false)
     val readS = buffer(batch, MAP_READ | COPY_DST, kept = false)

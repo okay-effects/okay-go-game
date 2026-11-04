@@ -40,6 +40,69 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   if (p.acc == 1u) { outp[o] = outp[o] + s; } else { outp[o] = s; }
 }"""
 
+  /** THE CONVOLUTION TILED, as an implicit matrix product: a workgroup of 16 x 16 threads makes a tile of 64 output
+   * channels by 64 points of one position (workgroup z), each thread 4 x 4 of them (channels ty + 16i, points
+   * tx + 16j); the sum over k = (dy * kx + dx) * cin + ic (the weights' own order) taken 16 at a time — a slice of the
+   * weights [16][64] and of the unrolled input [16][64] (im2col on the fly, 0 beyond the edge) put in workgroup
+   * memory, then 16 x 16 products a thread. Dispatched (points / 64, channels / 64, batch). */
+  val convTiled: String = """
+struct P { batch: u32, n: u32, cin: u32, cout: u32, ky: u32, kx: u32, acc: u32, pad: u32 }
+@group(0) @binding(0) var<uniform> p: P;
+@group(0) @binding(1) var<storage, read> inp: array<f32>;
+@group(0) @binding(2) var<storage, read> w: array<f32>;
+@group(0) @binding(3) var<storage, read_write> outp: array<f32>;
+var<workgroup> ws: array<f32, 1024>;
+var<workgroup> xs: array<f32, 1024>;
+@compute @workgroup_size(16, 16)
+fn main(@builtin(workgroup_id) wg: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+  let a = p.n * p.n;
+  let b = wg.z; let p0 = wg.x * 64u; let o0 = wg.y * 64u;
+  let kAll = p.ky * p.kx * p.cin;
+  let tid = lid.y * 16u + lid.x;
+  let py = i32((p.ky - 1u) / 2u); let px = i32((p.kx - 1u) / 2u);
+  var acc: array<f32, 16>;
+  for (var k0 = 0u; k0 < kAll; k0 = k0 + 16u) {
+    for (var r = 0u; r < 4u; r = r + 1u) {
+      let e = tid + r * 256u;
+      let kk = e / 64u; let col = e % 64u;
+      let k = k0 + kk;
+      var wv = 0.0;
+      if (k < kAll && o0 + col < p.cout) { wv = w[k * p.cout + o0 + col]; }
+      ws[e] = wv;
+      var xv = 0.0;
+      let pt = p0 + col;
+      if (k < kAll && pt < a) {
+        let ic = k % p.cin; let t = k / p.cin; let dx = t % p.kx; let dy = t / p.kx;
+        let y = i32(pt / p.n) + i32(dy) - py; let x = i32(pt % p.n) + i32(dx) - px;
+        if (y >= 0 && y < i32(p.n) && x >= 0 && x < i32(p.n)) {
+          xv = inp[(b * p.cin + ic) * a + u32(y) * p.n + u32(x)];
+        }
+      }
+      xs[e] = xv;
+    }
+    workgroupBarrier();
+    for (var kk = 0u; kk < 16u; kk = kk + 1u) {
+      for (var i = 0u; i < 4u; i = i + 1u) {
+        let wv = ws[kk * 64u + lid.y + 16u * i];
+        for (var j = 0u; j < 4u; j = j + 1u) {
+          acc[i * 4u + j] = acc[i * 4u + j] + wv * xs[kk * 64u + lid.x + 16u * j];
+        }
+      }
+    }
+    workgroupBarrier();
+  }
+  for (var i = 0u; i < 4u; i = i + 1u) {
+    let oc = o0 + lid.y + 16u * i;
+    for (var j = 0u; j < 4u; j = j + 1u) {
+      let pt = p0 + lid.x + 16u * j;
+      if (oc < p.cout && pt < a) {
+        let o = (b * p.cout + oc) * a + pt;
+        if (p.acc == 1u) { outp[o] = outp[o] + acc[i * 4u + j]; } else { outp[o] = acc[i * 4u + j]; }
+      }
+    }
+  }
+}"""
+
   /** out = relu(in * scale[c] + bias[c]) */
   val norm: String = s"""
 struct P { batch: u32, c: u32, a: u32, pad: u32 }
