@@ -42,10 +42,21 @@ def run(page: String, pictures: String): Unit =
   shot("go-end.png")
   button("Back to the menu").click()
   button("Play Black against the model").click()
+  button("Beginner — twelve numbers, no reading ahead").click()
   for m <- Seq("E5", "C3", "G7") do
     if point(m).count() == 1 then { point(m).click(); has("The model played") }
   if stones < 4 then fail(s"$stones stones after three moves and replies")
   shot("go-model.png")
+  // the Stronger model: its replies timed, its thought shown
+  button("Menu").click(); button("Play Black against the model").click()
+  button("Stronger — a search that plays thousands of games out").click()
+  var ms = List.empty[Long]
+  for (m, k) <- Seq("E5", "C3", "G7", "C7").zipWithIndex if point(m).count() == 1 do
+    val t0 = System.nanoTime(); point(m).click(); has(s"move ${2 * k + 3}")
+    ms :+= (System.nanoTime() - t0) / 1000000
+  if !p.locator("#app").textContent().contains("chance to win") then fail("no thought shown")
+  println(s"stronger replies: ${ms.mkString(", ")} ms")
+  shot("go-stronger.png")
   if errors.nonEmpty then fail("page errors: " + errors.mkString("; "))
   println(s"e2e: ok ($stones stones against the model)")
   browser.close(); pw.close()

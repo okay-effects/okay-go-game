@@ -13,7 +13,7 @@ object Go:
 
   enum Mode:
     case Two
-    case Against(person: Int)
+    case Against(person: Int, level: Strength)
 
   /** the page opened by a game's link goes to that game; else the menu */
   def main[R[_]: Has[Ui]: Has[Model]: Has[Remote]: Has[Place]: Has[Clipboard]]: Unit ! R =
@@ -28,8 +28,10 @@ object Go:
       "Play White against the model" -> 3, "Rules" -> 4).flatMap {
       case 5 => Online.start[R].andThen(defer(menuOf[R]))
       case 1 => turn[R](Mode.Two, Rules.start, Nil).andThen(defer(menuOf[R]))
-      case 2 => turn[R](Mode.Against(Black), Rules.start, Nil).andThen(defer(menuOf[R]))
-      case 3 => modelMoves[R](Mode.Against(White), Rules.start).andThen(defer(menuOf[R]))
+      case 2 => strength[R].flatMap(_.fold(pure(()))(l => turn[R](Mode.Against(Black, l), Rules.start, Nil)))
+        .andThen(defer(menuOf[R]))
+      case 3 => strength[R].flatMap(_.fold(pure(()))(l => modelMoves[R](Mode.Against(White, l), Rules.start)))
+        .andThen(defer(menuOf[R]))
       case _ => inform[R]("Rules", rules).andThen(defer(menuOf[R]))
     }
 
@@ -55,7 +57,7 @@ object Go:
       val points = legal.map(p => Button(Rules.name(p))(Act.Stone(p)).at(s"p$p"))
       val heading = mode match
         case Mode.Two => Part.text(status(pos))
-        case Mode.Against(c) => Part.text(s"You play ${Board.word(c)} · " + status(pos))
+        case Mode.Against(c, _) => Part.text(s"You play ${Board.word(c)} · " + status(pos))
       show(Screen[Act]("Go")((Board(pos, legal.toSet) +: heading +: said)*)(
         (points ++ Seq(Button("Pass")(Act.Pass), Button("Resign", Style.Danger)(Act.Resign),
           Button("Menu")(Act.Menu)))*)).flatMap {
@@ -67,22 +69,25 @@ object Go:
 
   /** after a person's move: the model's turn when it is the model's, else the next person's */
   def after[R[_]: Has[Ui]: Has[Model]](mode: Mode, pos: Position): Unit ! R = mode match
-    case Mode.Against(c) if pos.toPlay != c && !pos.over => modelMoves[R](mode, pos)
+    case Mode.Against(c, _) if pos.toPlay != c && !pos.over => modelMoves[R](mode, pos)
     case _ => defer(turn[R](mode, pos, Nil))
 
   /** the model's move: its logits; what it wanted (the highest of all) and what it played (the highest legal one, or
    * a pass) */
   def modelMoves[R[_]: Has[Ui]: Has[Model]](mode: Mode, pos: Position): Unit ! R =
-    perform[Model](Model.Logits(pos)).flatMap { logits =>
+    val level = mode match { case Mode.Against(_, l) => l; case Mode.Two => Strength.Beginner }
+    perform[Model](Model.Logits(pos, level)).flatMap { thought =>
+      val logits = thought.logits
       val legal = Rules.legal(pos)
       val wanted = logits.indices.maxBy(logits)
       val played = (legal :+ Rules.points.size).maxBy(logits)
       def said(k: Int) = if k == Rules.points.size then "pass" else Rules.name(k)
       val why = if wanted == played then "the same" else Rules.tryPlay(pos, wanted).left.toOption.fold("")(_.text)
       val next = if played == Rules.points.size then Rules.pass(pos) else Rules.play(pos, played)
-      val note = Part.details("The model wanted" -> (if wanted == played then said(wanted)
-          else s"${said(wanted)} — not allowed: $why"),
-        "The model played" -> said(played))
+      val rows: List[(String, String)] = List("The model wanted" -> (if wanted == played then said(wanted)
+          else s"${said(wanted)} — not allowed: $why"), "The model played" -> said(played)) ++
+        thought.note.map("The model thinks" -> _)
+      val note = Part.details(rows*)
       if next.over then end[R](mode, next, None) else defer(turn[R](mode, next, List(note)))
     }
 
@@ -95,3 +100,8 @@ object Go:
       (if resigned.isEmpty then Seq(Part.details("Black" -> s"$black (stones and the points they surround)",
         "White" -> f"$white%.1f (stones, points, and komi 6.5)")) else Nil)
     show(Screen[Unit]("Game over")(parts*)(Button("Back to the menu", Style.Primary)(())))
+
+  /** the model's strength, chosen: none when Back */
+  def strength[R[_]: Has[Ui]]: Option[Strength] ! R =
+    menu[Option[Strength], R]("The model's strength", (Strength.values.toList.map(l => l.label -> Some(l)) :+
+      ("Back" -> None))*)

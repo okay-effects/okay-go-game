@@ -46,5 +46,7 @@ object InTheBrowser:
       |""".stripMargin)
 
   def main(args: Array[String]): Unit =
-    val world = okay.business.web.InThePage.clipboard(PageAddress()(Sockets(Sockets.server)(Model.toy()(Go.main[App]))))
+    // the model in the page: a Stronger move at most 4000 games played out, or 1.5 s
+    val model = Model.toy(playouts = 4000, millis = 1500)
+    val world = okay.business.web.InThePage.clipboard(PageAddress()(Sockets(Sockets.server)(model(Go.main[App]))))
     Page.mount(OnFaces.program(steps(world)), skin)

@@ -66,7 +66,7 @@ class GoSuite extends munit.FunSuite:
   test("against the toy: it answers each move with a legal one, says what it wanted, and the game can end") {
     val toy = Model.toy(new scala.util.Random(5))
     def run(acts: Act*) = Play(app(toy), acts*)
-    val p1 = run(Act.press("Play Black against the model"), Act.press("E5"))
+    val p1 = run(Act.press("Play Black against the model"), Act.press(Strength.Beginner.label), Act.press("E5"))
     val said = p1.at.get.parts.collect { case Part.Details(rows) => rows.map((k, v) => k -> v.text) }.head
     assertEquals(said.map(_._1), List("The model wanted", "The model played"), said.toString)
     val pic = p1.at.get.parts.collect { case Part.Block("go", _, ps) => ps.collect { case Part.Picture(_, _, _, t) =>
@@ -82,6 +82,38 @@ class GoSuite extends munit.FunSuite:
   }
 
   test("as White against the model: the model moves first") {
-    val p1 = Play(app(Model.toy(new scala.util.Random(2))), Act.press("Play White against the model"))
+    val p1 = Play(app(Model.toy(new scala.util.Random(2))), Act.press("Play White against the model"),
+      Act.press(Strength.Beginner.label))
     assert(p1.at.get.parts.collect { case Part.Text(s) => s }.head.startsWith("You play White · White to play"))
+  }
+
+  test("Stronger: the search beats the toy, as Black and as White; its moves legal; its thought shown") {
+    val r = new scala.util.Random(11)
+    var wins = 0
+    for strong <- Seq(Black, White, Black, White) do
+      var pos = start
+      while !pos.over && pos.moves < 250 do
+        val logits = if pos.toPlay == strong then Model.searched(pos, 400, r).logits
+          else Model.logits(pos, () => r.nextFloat())
+        val k = (legal(pos) :+ points.size).maxBy(logits)
+        pos = if k == points.size then pass(pos) else play(pos, k)
+      val (b, w) = score(pos.board)
+      if (b > w) == (strong == Black) then wins += 1
+    assertEquals(wins, 4)
+    val p1 = Play(app(Model.toy(new scala.util.Random(3), playouts = 300)), Act.press("Play Black against the model"),
+      Act.press(Strength.Stronger.label), Act.press("E5"))
+    val said = p1.at.get.parts.collect { case Part.Details(rows) => rows.map((k, v) => k -> v.text) }.head.toMap
+    assert(said("The model thinks").matches("a \\d+% chance to win after [A-J]\\d — 300 games played out"), said)
+    assertEquals(said("The model wanted"), said("The model played"))
+  }
+
+  test("Stronger passes when the opponent passed and the board as it stands is won; not when it is lost") {
+    // Black owns everything left of a wall at E; White has passed
+    val wall = (0 until N).foldLeft(empty)((b, r) => b.updated(r * N + 4, Black).updated(r * N + 5, White))
+    val won = Position(wall, Black, Set(wall), 1, Map(Black -> 0, White -> 0), None, 40)
+    val t = Model.searched(won, 200, new scala.util.Random(1))
+    assertEquals(t.logits.indices.maxBy(t.logits), points.size, "a pass: 45 to 36 + 6.5")
+    val lost = won.copy(toPlay = White)
+    val t2 = Model.searched(lost, 200, new scala.util.Random(1))
+    assert(t2.logits.indices.maxBy(t2.logits) != points.size || t2.note.exists(_.contains("nothing")), t2.note)
   }

@@ -9,11 +9,37 @@ trait Handles[E[_]]:
 
 /** THE MODEL, as an effect: given a position, a logit for each of the 81 points and, last, for passing. Which model
  * answers is a handler's — a toy here; a stronger engine elsewhere, the program the same */
+/** how strong a model is asked to be: the toy's twelve numbers, or a search that plays games out */
+enum Strength(val label: String):
+  case Beginner extends Strength("Beginner — twelve numbers, no reading ahead")
+  case Stronger extends Strength("Stronger — a search that plays thousands of games out")
+
+/** what the model answers: a logit for each point and, last, for passing; what it thinks, in words */
+final case class Thought(logits: Vector[Float], note: Option[String] = None)
+
 enum Model[X]:
-  case Logits(pos: Position) extends Model[Vector[Float]]
+  case Logits(pos: Position, level: Strength) extends Model[Thought]
 
 object Model:
-  def toy(random: scala.util.Random = new scala.util.Random()): Handles[Model] = Toy(random)
+  /** the toy and the search in the page: `playouts` games played out for a Stronger move */
+  def toy(random: scala.util.Random = new scala.util.Random(), playouts: Int = 4000,
+      millis: Long = Long.MaxValue): Handles[Model] = Toy(random, playouts, millis)
+
+  /** THE SEARCH'S ANSWER: the point played most at the root; a pass when the opponent has passed and the board as
+   * it stands is won, when nothing is worth playing, or when the game is lost beyond hope */
+  def searched(pos: Position, playouts: Int, r: scala.util.Random, millis: Long = Long.MaxValue): Thought =
+    val result = Search.run(pos, playouts, r, millis)
+    val kids = result.root.children.nn
+    val won = { val s = Fast.of(pos).score; if pos.toPlay == Black then s > 0 else s < 0 }
+    val best = kids.maxByOption(_.n)
+    val rate = best.fold(0.0)(_.rate)
+    val passing = best.isEmpty || (pos.passes == 1 && won) || (rate < 0.04 && result.playouts >= 500)
+    val logits = Array.fill(Rules.points.size + 1)(-1000f)
+    kids.foreach(c => logits(c.move) = math.log(c.n + 1.0).toFloat)
+    logits(Rules.points.size) = if passing then 1000f else -500f
+    val note = best.fold("nothing is worth playing")(b => f"a ${rate * 100}%.0f%% chance to win after ${Rules.name(
+      b.move)} — ${result.playouts} games played out")
+    Thought(logits.toVector, Some(note))
 
   /** THE TOY'S WEIGHTS — the whole model: what a point is worth for each thing a stone there would do */
   object W:
@@ -57,10 +83,11 @@ object Model:
       v
     Rules.points.map(value).toVector :+ W.pass
 
-final class Toy(random: scala.util.Random) extends Handles[Model]:
+final class Toy(random: scala.util.Random, playouts: Int, millis: Long) extends Handles[Model]:
   def apply[R[_], Rest[_], A](p: A ! R)(using Split[Model, R, Rest]): A ! Rest =
     handle(p, Handler.Tail[Model, Rest, A, A](a => pure(a), [X] => (asked: Model[X]) => asked match
-      case Model.Logits(pos) => Model.logits(pos, () => random.nextFloat())))
+      case Model.Logits(pos, Strength.Beginner) => Thought(Model.logits(pos, () => random.nextFloat()))
+      case Model.Logits(pos, Strength.Stronger) => Model.searched(pos, playouts, random, millis)))
 
 /** colours by name, for the screens */
 object Stones:

@@ -75,7 +75,25 @@ captured before passing, the board counted as it stands. Points named by column 
   friend's link, a watcher) to the end, a reload keeping the seat: on `wrangler dev`, on the live Worker with the
   live page, and on the host.
 
-## The toy model (`Model.W`, twelve numbers)
+## The Stronger model: a search (operator, 2026-11-04)
+
+After the colour, the menu asks the model's strength (`Strength`): Beginner — the toy below — or Stronger, a
+Monte-Carlo tree search with RAVE (`Search`) answering the same effect (`Model.Logits(position, strength)` →
+`Thought`: the logits, and what it thinks in words).
+
+- Each move: up to 4000 games played out from the position (in the page also no more than 1.5 s) on a fast board
+  (`Fast`: arrays, simple ko) — down the tree by the best estimate (the share of wins, mixed with RAVE's share for
+  the same move anywhere later, weight sqrt(600 / (3n + 600)), plus 0.25·sqrt(ln N / n)), then at random to the end
+  (no own eye filled), scored by area. The root's moves are the exact rules' (superko), own eyes left out.
+- The answer: the point played most; the logits log(games + 1) for the root's moves, very low for the rest. It passes
+  when the opponent has passed and the board as it stands is won, when nothing is worth playing, or when its chance
+  is under 4% after 500 games. "The model thinks: a 61% chance to win after F5 — 4000 games played out".
+- Measured (JVM): against the toy 10 of 10 at 1000 games a move (34 ms a move), 6 of 6 at 3000 (97 ms); its margins
+  are small — it plays for the win, not for points. In Chromium a reply takes ~0.5 s (4000 games).
+- Checked: `GoSuite` — Stronger beats the toy 4 of 4 (400 games a move, both colours), its thought shown, its wish its
+  move; it passes on a won board after the opponent's pass. `scripts/e2e.scala` times its replies in Chromium.
+
+## The Beginner model, a toy (`Model.W`, twelve numbers)
 
 Each point is valued as if a stone of the side to play stood there — it does not know which points are legal; the
 mask does: per stone captured +3, an enemy group put in atari +1.2, an own group in atari saved +2.5, self-atari −2.5,
