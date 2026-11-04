@@ -191,3 +191,7 @@ WebGL2, else the search that plays games out, and says which and why ("Runs on")
 = the CPU reference within 1.7e-5 on three sizes; on Apple M4 Max (ANGLE on Metal) a batch of 8 on 19 x 19 in 20 ms
 (b10c128), 10 ms (ours, 6 x 64). In Chromium, WebGL2, a batch of 8: ~450 positions a move on 9 x 9 with b10c128,
 ~950 with ours.
+On an iPhone XR (iOS 18.7.11, Safari, A12, no WebGPU) the page picks WebGL2 by itself: `?selftest` = the CPU within
+1.7e-5; a batch of 8 in 157 / 274 / 564 ms on 9 x 9 / 13 x 13 / 19 x 19 (b10c128; the CPU 407 / 901 / 1 975 ms a
+position) — ~75 positions a move on 9 x 9, ~55 on 19 x 19. Faster there: our smaller network (BACKLOG 6), shaders of
+eight channels a fragment, half floats (checked first).
