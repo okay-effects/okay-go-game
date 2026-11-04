@@ -29,3 +29,11 @@ Notes as it runs (2026-11-04):
 - At step 10 000 (agree 53 % on 9 x 9): 1 of 32 against b10c128 at 100 visits each — early; measured again at the end.
 - In the page: `?net=own` runs it on WebGPU unchanged (= CPU within 2.4e-6); a batch of 8 on 19 x 19 7.4 ms against
   b10c128's 16.2 ms (the GPU shared), the CPU 6 x faster.
+- DONE 2026-11-04 16:41 (resumed at 42 000 and 43 000 after a reboot and the memory cap): step 100 000, 2.2 M positions
+  of 22 663 teacher games; held out, agree with b10c128's argmax 61.3 % (9 x 9), 56.5 % (13), 56.8 % (19). nets/own.bin
+  1.9 MB (b10c128 12 MB); saved copies nets/own-42000.bin, own-43000.bin, own-100000.bin.
+- Matches on 9 x 9 (32 games, colours swapped): ours at 100 visits against b10c128 at 100: 4 won (13 %); ours at 400
+  (its speed: ~3-4 x) against b10c128 at 100: 11 won (34 %). The teacher stays the page's default; ours at ?net=own,
+  published. WebKit's WebGL2 on the Mac, a batch of 8: ours 7 / 11 / 7 ms, b10c128 20 / 15 / 21 ms.
+- Next, if ours is to beat the teacher at equal time: a larger student (6 x 96 or 10 x 64), targets from the teacher's
+  search (PUCT visits) rather than its raw policy, longer. First: the XR's numbers for ?selftest&net=own.
