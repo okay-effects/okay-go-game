@@ -40,6 +40,8 @@ Notes as it runs (2026-11-04):
 
 ## In flight: BACKLOG 6, round 2 — a larger student (started 2026-11-04 ~17:40)
 
+- PAUSED by the user at step 52 000 (2026-11-04 ~22:20): nets/own-6x96.bin saved at 52 000 (agree ~61 % on 9 x 9 at
+  40 000). Go on: `--resume=52000` with the same arguments and --out (restart loop: /tmp/run-6x96.sh, not kept).
 - [ ] 6 x 96 (pooling channels a quarter: 24), from scratch, 100 000 steps, to nets/own-6x96.bin (`--out=`);
   `sbt "train/runMain okay.go.train.Distill 100000 6 96 --out=nets/own-6x96.bin"`, the log train/target/distill.log
   (resume: `--resume=<step>` with the same --out). ~2 x the 6 x 64's time a step.
