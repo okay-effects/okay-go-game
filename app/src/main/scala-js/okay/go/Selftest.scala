@@ -20,15 +20,15 @@ object Selftest:
       pos = if moves.isEmpty || r.nextInt(30) == 0 then pass(pos) else play(pos, moves(r.nextInt(moves.size)))
     pos
 
-  def run(): Unit =
+  def run(net: String): Unit =
     val out = dom.document.createElement("pre"); out.id = "selftest"
     dom.document.body.appendChild(out)
     def say(s: String): Unit = { out.textContent = out.textContent + s + "\n"; println(s) }
     val now = () => dom.window.performance.now()
     (for
-      (model, _) <- GpuNet.load("net/b10c128.bin")
+      (model, _) <- GpuNet.load(s"net/$net.bin")
       gpu <- GpuNet.create(model)
-      _ = say(s"model: ${model.parameters} parameters; WebGPU: ${gpu.isDefined}")
+      _ = say(s"model $net: ${model.parameters} parameters; WebGPU: ${gpu.isDefined}")
       _ <- gpu.fold(Future.unit) { net =>
         val cpu = Forward(model)
         Seq(9, 13, 19).foldLeft(Future.unit) { (prev, size) => prev.flatMap { _ =>

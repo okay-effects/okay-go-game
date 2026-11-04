@@ -64,8 +64,10 @@ lazy val app = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Pure).i
       IO.copyFile(baseDirectory.value.getParentFile / "web" / "index.html", out / "index.html")
       IO.copyFile(from, out / "main.js")
       // the network's weights, written by `netJVM/runMain okay.go.net.WriteBinary`, beside the script
-      val weights = (ThisBuild / baseDirectory).value / "nets" / "b10c128.bin"
-      if (weights.exists) IO.copyFile(weights, out / "net" / "b10c128.bin")
+      for (name <- Seq("b10c128", "own")) {
+        val weights = (ThisBuild / baseDirectory).value / "nets" / s"$name.bin"
+        if (weights.exists) IO.copyFile(weights, out / "net" / s"$name.bin")
+      }
       streams.value.log.info(s"the page: ${out / "index.html"}")
       out
     })

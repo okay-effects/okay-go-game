@@ -10,7 +10,7 @@ import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.util.{Failure, Success}
 
 /** the network as the page has it: on the GPU, the model it is, how many bytes it came in and how long it took */
-final class Engine(val gpu: GpuNet, val model: Net, val bytes: Int, val loadMs: Double)
+final class Engine(val name: String, val gpu: GpuNet, val model: Net, val bytes: Int, val loadMs: Double)
 
 /**
  * THE MODEL IN THE PAGE, A NETWORK: KataGo's g170 b10c128 network on WebGPU (`GpuNet`), searched by PUCT — leaves in
@@ -39,8 +39,10 @@ final class NetThinking(net: () => Future[Option[Engine]], random: scala.util.Ra
     val best = s.top.children.nn.map(_.n).maxOption.getOrElse(0)
     def per(ms: Double) = if c.batches == 0 then "—" else f"${ms / c.batches}%.1f ms"
     List(
-      "Model" -> (f"KataGo g170 b10c128 — ${m.blocks.size} residual blocks of ${m.conv1.out} channels " +
-        f"($pooling with global pooling), ${m.parameters}%,d weights; CC0"),
+      "Model" -> ((if e.name == "own" then "Our own, distilled from KataGo b10c128 by mlx-scala"
+        else "KataGo g170 b10c128") + f" — ${m.blocks.size} residual blocks of ${m.conv1.out} channels " +
+        f"($pooling with global pooling), ${m.parameters}%,d weights" +
+        (if e.name == "own" then "" else "; CC0")),
       "Runs on" -> s"WebGPU — ${e.gpu.adapter} (kernels in f32${if e.gpu.f16 then "; f16 available" else ""})",
       "Weights" -> f"${mb(e.bytes)}, float32, loaded in ${e.loadMs / 1000}%.1f s",
       "GPU memory" -> (s"${mb(e.gpu.weightBytes + e.gpu.otherBytes)} (weights ${mb(e.gpu.weightBytes)}, " +
@@ -129,12 +131,15 @@ final class NetThinking(net: () => Future[Option[Engine]], random: scala.util.Ra
           }.flatMap(k)))
 
 object NetThinking:
+  /** the network the page plays with: KataGo's b10c128, or ours with `?net=own` */
+  def chosen: String = if dom.window.location.search.contains("net=own") then "own" else "b10c128"
+
   /** the network of the page, loaded and put on the GPU once, at the first call */
-  def network(): () => Future[Option[Engine]] =
+  def network(name: String): () => Future[Option[Engine]] =
     lazy val loaded: Future[Option[Engine]] =
       val t0 = dom.window.performance.now()
       (for
-        (model, bytes) <- GpuNet.load("net/b10c128.bin")
+        (model, bytes) <- GpuNet.load(s"net/$name.bin")
         gpu <- GpuNet.create(model)
-      yield gpu.map(g => Engine(g, model, bytes, dom.window.performance.now() - t0))).recover { case _ => None }
+      yield gpu.map(g => Engine(name, g, model, bytes, dom.window.performance.now() - t0))).recover { case _ => None }
     () => loaded

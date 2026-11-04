@@ -60,11 +60,11 @@ object InTheBrowser:
   type Web[X] = (Async + Ui + Model + Remote + Place + Clipboard)[X]
 
   def main(args: Array[String]): Unit =
-    if dom.window.location.search.contains("selftest") then Selftest.run() else page()
+    if dom.window.location.search.contains("selftest") then Selftest.run(NetThinking.chosen) else page()
 
   def page(): Unit =
     // the links copied by the browser's clipboard; games far apart over a socket; the model KataGo's network on
     // WebGPU searched by PUCT (the search that plays games out where WebGPU is missing)
     val world = okay.business.web.InThePage.clipboard(PageAddress()(Sockets(Sockets.server)(NetThinking(
-      NetThinking.network())(Go.main[Web]))))
+      NetThinking.network(NetThinking.chosen))(Go.main[Web]))))
     val _ = Async.start(Laminar.run(dom.document.getElementById("app"), skin)(world))
