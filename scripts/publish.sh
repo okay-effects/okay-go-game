@@ -14,6 +14,8 @@ git fetch -q origin gh-pages 2>/dev/null && git worktree add -q "$out" gh-pages 
 rm -f "$out/index.html" "$out/main.js"
 cp app/.js/target/web/index.html app/.js/target/web/main.js "$out/"
 mkdir -p "$out/net" && cp app/.js/target/web/net/b10c128.bin "$out/net/"
+# our own network (BACKLOG 6), when trained: nets/own.bin, played with ?net=own
+[ -f app/.js/target/web/net/own.bin ] && cp app/.js/target/web/net/own.bin "$out/net/"
 touch "$out/.nojekyll"
 git -C "$out" add -A
 git -C "$out" commit -q -m "the page, from $(git rev-parse --short HEAD)" || echo "nothing new"

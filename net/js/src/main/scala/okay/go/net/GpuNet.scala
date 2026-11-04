@@ -171,5 +171,8 @@ object GpuNet:
   /** the model's bytes fetched from `url` and read: the model, and how many bytes it came in */
   def load(url: String)(using ExecutionContext): Future[(Model, Int)] =
     g.fetch(url).asInstanceOf[js.Promise[js.Dynamic]].toFuture
-      .flatMap(r => r.arrayBuffer().asInstanceOf[js.Promise[ArrayBuffer]].toFuture)
+      .flatMap { r =>
+        if !r.ok.asInstanceOf[Boolean] then Future.failed(IllegalStateException(s"$url: HTTP ${r.status}"))
+        else r.arrayBuffer().asInstanceOf[js.Promise[ArrayBuffer]].toFuture
+      }
       .map(ab => (Binary.read(TypedArrayBuffer.wrap(ab)), ab.byteLength))

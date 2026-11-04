@@ -1,5 +1,5 @@
 //> using scala 3.3.8
-//> using dep com.microsoft.playwright:playwright:1.63.0
+//> using dep com.microsoft.playwright:playwright:1.62.0
 
 import com.microsoft.playwright.{BrowserType, Playwright}
 import java.nio.file.Path
@@ -14,8 +14,12 @@ import scala.jdk.CollectionConverters.*
     "/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/" +
     "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing")
   val pw = Playwright.create(Playwright.CreateOptions().setEnv(Map("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD" -> "1").asJava))
-  val browser = pw.chromium().launch(BrowserType.LaunchOptions().setExecutablePath(Path.of(exe)).setHeadless(false)
-    .setArgs(List("--enable-unsafe-webgpu", "--enable-features=WebGPU").asJava))
+  // `$BROWSER=webkit`: Playwright's WebKit (Safari's engine, as an iPhone has it; Playwright 1.62 for the
+  // webkit-2336 installed here), else Chromium with WebGPU
+  val browser =
+    if sys.env.get("BROWSER").contains("webkit") then pw.webkit().launch(BrowserType.LaunchOptions().setHeadless(false))
+    else pw.chromium().launch(BrowserType.LaunchOptions().setExecutablePath(Path.of(exe)).setHeadless(false)
+      .setArgs(List("--enable-unsafe-webgpu", "--enable-features=WebGPU").asJava))
   val p = browser.newPage()
   p.setDefaultTimeout(180000)
   val console = scala.collection.mutable.ArrayBuffer.empty[String]
