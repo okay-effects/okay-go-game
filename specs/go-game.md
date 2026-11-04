@@ -8,34 +8,62 @@ The data model is effects; every implementation is a handler; the browser runs t
 
 | effect | operation | answered with | handlers |
 |---|---|---|---|
+| `Model` | `Think(position)` | `Pending`: a `Thought` (a point or a pass, words) now, or later as an event | `Thinking()` (the page), `Model.searching(r, games)` (tests) |
 | `Remote` | `Create`, `Join`, `Updates`, `Send`, `Leave` | a game far apart: its invite, its updates | `Sockets(server)` (the page), `Tables().client()` (tests) |
 | `Place` | `Read`, `Write`, `Base` | the page's address: a game's link | `PageAddress()` (the page), `Place.fixed` (tests) |
-| `Model` | `Logits(position)` | a logit for each of the 81 points, then one for passing | `Model.toy()` (the page, tests with a seed) |
-| `Ui` | `Show(screen)` | the button pressed | okay-ui's `steps` |
+| `Clipboard` | `Copy(text)` | whether it was copied | okay-ui's `InThePage.clipboard` (the page), `copiedTo` (tests) |
+| `Ui` | `Show(screen)` | the button pressed, or the screen's event | okay-ui's `steps` |
 
 ```scala
-Page.mount(OnFaces.program(steps(PageAddress()(Sockets(Sockets.server)(Model.toy()(Go.main[App]))))), skin)
+val world = InThePage.clipboard(PageAddress()(Sockets(Sockets.server)(Thinking()(Go.main[App]))))
+Page.mount(OnFaces.program(steps(world)), skin)
 ```
 
-## The rules (`Rules`)
+## The boards and the rules (`Geometry`, `Rules`, in `core`)
 
-9 × 9; Black begins. A group with no liberty is captured; a stone whose group would have no liberty (capturing
-nothing) is suicide and not allowed; no move may bring back a board seen before (positional superko — it covers ko).
-A pass instead of a stone; two passes in a row end the game. The score by area (Tromp-Taylor): stones plus the empty
-points whose region reaches only that colour; komi 6.5 to White, so no draw. Dead stones are not marked: they are
-captured before passing, the board counted as it stands. Points named by column (A–J, no I) and row from the bottom.
+9 × 9, 13 × 13 or 19 × 19 (`Geometry`: points named by column — A to T, no I — and row from the bottom; the star
+points; komi 6.5 on 9 × 9, 7.5 on the larger boards). Black begins. A group with no liberty is captured; a stone whose
+group would have no liberty (capturing nothing) is suicide and not allowed; no move may bring back a board seen before
+(positional superko — it covers ko). A pass instead of a stone; two passes in a row end the game. The score by area
+(Tromp-Taylor): stones plus the empty points whose region reaches only that colour, komi to White, so no draw. Dead
+stones are not marked: they are captured before passing, the board counted as it stands.
 
 ## The game (`Go`)
 
-- The menu: Two players, Play a friend online, Play Black against the model, Play White against the model, Rules. No Quit.
-- The board (`Board`): `Part.block("go")` of a picture — the wood, 9 lines each way, the star points, the stones, the
-  last move's dot, at the end each empty point's owner — and over it `go-points-<colour to play>`, a grid of 81
+- The menu: Two players, Play a friend online, Play Black against the model, Play White against the model, Rules.
+  No Quit. Each game asks its board first: 9 × 9 — a quick game, 13 × 13, 19 × 19 — the full board.
+- The board (`Board`): `Part.block("go")` of a picture — the wood, the lines, the star points, the stones, the last
+  move's dot, at the end each empty point's owner — and over it `go-points-<colour to play>-<size>`, a grid of
   blocks with a button at each LEGAL point only (named by the point, E5): a taken point, a suicide or a ko cannot be
-  asked for. The skin draws the button as a round shadow of the stone to be played under the pointer.
+  asked for. The skin draws the button as a round shadow of the stone to be played under the pointer, and sizes the
+  grid for each board (`[class$="-<size>"]`).
 - A turn: the status (who plays, the move, captures), Pass, Resign, Menu. Against the model, after the person's move
-  the model moves at once: its logits; what it WANTED (the highest of all 82) and what it PLAYED (the highest legal
-  point, or a pass) — shown with the reason when they differ ("D5 — not allowed: the point is taken").
-- The end: two passes — the result, Black's and White's counts; or a resignation.
+  the model thinks: in a page the screen shows the board and "The model is thinking…" and waits for the thought (an
+  event; Menu leaves); then "The model played" and "The model thinks" (its chance to win, the games it played out).
+- The end: two passes — the result, Black's and White's counts with the board's komi; or a resignation.
+
+## The model: a search (`Searcher`, `Fast`; operator, 2026-11-04: one model, strong)
+
+Monte-Carlo tree search with RAVE and prior knowledge, on a fast board of any size (`Fast`: arrays, marks, simple ko).
+
+- A game played out: down the tree by the best estimate — the share of wins mixed with RAVE's share for the same move
+  anywhere later (weight sqrt(800 / (3n + 800))), plus 0.2·sqrt(ln N / n) — then by the playout policy to the end:
+  a capture next to the last move; else an own group next to it saved from atari; else at random, no own eye filled,
+  a self-atari refused nine times in ten. Scored by stones and eyes, komi the board's.
+- Prior knowledge: a new node's moves start with 8 virtual games, their share by what the move does — a capture 0.8,
+  saving a group 0.75, a self-atari 0.15, an atari 0.6, else 0.5; the first line −0.15; in the opening the third and
+  fourth lines +0.1, the second −0.05; near the last move +0.05. The root's moves are the exact rules' (superko).
+- The answer (`Model.answer`): the point played most. A pass when nothing is worth playing, when the opponent has
+  passed and the board as it stands is won, or when its chance is under 4% after 500 games.
+- In the page (`Thinking`): parts of ~25 ms between the page's frames until the board's budget (`Model.budget`): at
+  most 30 000 games, and 1.5 s on 9 × 9, 3 s on 13 × 13, 5 s on 19 × 19. Measured in Chromium: ~11 000 games a move
+  on 9 × 9 in 1.5 s, ~4 800 on 19 × 19 in 5 s.
+- Measured against the search before it (MCTS-RAVE, light playouts, no priors) on 9 × 9: at 400 games a move 27 of 30
+  (25 of 30 before the atari priors; without priors 14 of 30 — the priors are most of it); at 2000 games 14 of 20;
+  heavy playouts against light at 2000 games 13 of 20; at the page's budgets (12 000 games against its 4000) 9 of 10.
+- Checked: `GoSuite` — the model's moves legal to the end of whole games on 9 × 9 and 13 × 13; its thought shown; it
+  passes on a won board after the opponent's pass. `scripts/e2e.scala` times its replies in Chromium on 9 × 9 and
+  19 × 19.
 
 ## Online: two people far apart, and watchers (operator, 2026-11-04)
 
@@ -43,7 +71,7 @@ captured before passing, the board counted as it stands. Points named by column 
   keys (16 random bytes each, `crypto.getRandomValues`) and shows two links — the friend's (`#g=<id>&k=<their key>`,
   the other colour) and the watchers' (`#g=<id>`). The page's own address becomes the creator's link (`Place`), so a
   reload keeps the seat. A page opened by a link goes straight to that game.
-- The server (`server/`, okay-serverless): a game a Durable Object (`Games.Table`, an `Actor`) named by its id; the
+- The server (`server/`, okay-serverless): a game a Durable Object (`Games.Table`, an `Actor`) named by its id, of the size its first socket says (`&size=`, 9 if none); the
   Worker (`Games.Lobby`) sends /games/<id>/socket to it as it is. The first socket that brings both keys
   (`?key=…&black=…&white=…`) makes the game; from then a socket's key is its seat, any other key or none watches —
   the keys once kept are never replaced. Sockets are tagged by seat (black, white, watch). An action
@@ -75,37 +103,3 @@ captured before passing, the board counted as it stands. Points named by column 
   friend's link, a watcher) to the end, a reload keeping the seat: on `wrangler dev`, on the live Worker with the
   live page, and on the host.
 
-## The Stronger model: a search (operator, 2026-11-04)
-
-After the colour, the menu asks the model's strength (`Strength`): Beginner — the toy below — or Stronger, a
-Monte-Carlo tree search with RAVE (`Search`) answering the same effect (`Model.Logits(position, strength)` →
-`Thought`: the logits, and what it thinks in words).
-
-- Each move: up to 4000 games played out from the position (in the page also no more than 1.5 s) on a fast board
-  (`Fast`: arrays, simple ko) — down the tree by the best estimate (the share of wins, mixed with RAVE's share for
-  the same move anywhere later, weight sqrt(600 / (3n + 600)), plus 0.25·sqrt(ln N / n)), then at random to the end
-  (no own eye filled), scored by area. The root's moves are the exact rules' (superko), own eyes left out.
-- The answer: the point played most; the logits log(games + 1) for the root's moves, very low for the rest. It passes
-  when the opponent has passed and the board as it stands is won, when nothing is worth playing, or when its chance
-  is under 4% after 500 games. "The model thinks: a 61% chance to win after F5 — 4000 games played out".
-- Measured (JVM): against the toy 10 of 10 at 1000 games a move (34 ms a move), 6 of 6 at 3000 (97 ms); its margins
-  are small — it plays for the win, not for points. In Chromium a reply takes ~0.5 s (4000 games).
-- Checked: `GoSuite` — Stronger beats the toy 4 of 4 (400 games a move, both colours), its thought shown, its wish its
-  move; it passes on a won board after the opponent's pass. `scripts/e2e.scala` times its replies in Chromium.
-
-## The Beginner model, a toy (`Model.W`, twelve numbers)
-
-Each point is valued as if a stone of the side to play stood there — it does not know which points are legal; the
-mask does: per stone captured +3, an enemy group put in atari +1.2, an own group in atari saved +2.5, self-atari −2.5,
-filling an own eye −6, a point in a small (≤ 10) region already its own −3 or the opponent's −1.5, the first line −1,
-the third and fourth lines +0.6 in the first 20 moves, +0.3 per stone next to it, noise up to 0.6; passing 0.2.
-Toy against toy: games of 63–77 moves with captures, ended by two passes (5 seeds). It plays like a beginner.
-
-## Checks
-
-- `sbt appJVM/test` — `GoSuite`: names; a capture counted; suicide refused, a capturing move allowed; ko refused at
-  once and allowed later; the score of an empty board and of walls; two players by buttons (a taken point has no
-  button, two passes end it); against the toy (what it wanted and played; 150 moves of the toy all legal); as White
-  the model begins.
-- `scala-cli run scripts/e2e.scala -- app/.js/target/web/index.html`: two players in Chromium to the end, then against
-  the model; pictures in /tmp. Published by `scripts/publish.sh`: https://okay-effects.github.io/okay-go-game/.

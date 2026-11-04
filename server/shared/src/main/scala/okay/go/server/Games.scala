@@ -58,7 +58,9 @@ object Games:
           case Some(g) => pure(Some(g))
           case None => (request.param("black"), request.param("white")) match
             case (Some(b), Some(w)) if Room.wellFormed(b) && Room.wellFormed(w) && b != w && (key == b || key == w) =>
-              val g = Game(b, w, Vector.empty, None)
+              val size = request.param("size").flatMap(_.toIntOption).filter(okay.go.Geometry.sizes.contains)
+                .getOrElse(9)
+              val g = Game(size, b, w, Vector.empty, None)
               keep(name, g).as(Some(g))
             case _ => pure(None)
         made.flatMap {
@@ -85,13 +87,13 @@ object Games:
     /** the game as `socket` sees it, with why its action was refused */
     private def refuse(name: String, socket: Socket, why: String): Unit ! InActor =
       load(name).flatMap(found => Sockets.open[InActor]().flatMap { all =>
-        val g = found.getOrElse(Game("", "", Vector.empty, None))
+        val g = found.getOrElse(Game(9, "", "", Vector.empty, None))
         Sockets.send[InActor](socket, Room.writeView(view(g, all, socket).copy(error = Some(why))))
       })
 
     private def view(g: Game, all: List[Socket], to: Socket): View =
       def here(seat: String) = all.exists(_.tags.contains(seat))
-      View(g.moves, g.resigned, Room.seatOf(to.tags.headOption.getOrElse("")), here("black"), here("white"),
+      View(g.size, g.moves, g.resigned, Room.seatOf(to.tags.headOption.getOrElse("")), here("black"), here("white"),
         all.count(_.tags.contains("watch")))
 
     /** every open socket (but `gone`) told the game, each its own seat */

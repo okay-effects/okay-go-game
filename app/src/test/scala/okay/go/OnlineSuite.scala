@@ -35,13 +35,12 @@ class OnlineSuite extends munit.FunSuite:
   /** what the programs copied, newest last */
   val copied: scala.collection.mutable.Buffer[String] = scala.collection.mutable.Buffer.empty
   def program(t: Tables#Client, place: Handles[Place]): Step[Unit] =
-    on(steps(copiedTo(copied)(place(t(Model.toy(new scala.util.Random(1))(Go.main[App]))))))
-  val e5: Int = Rules.points.find(Rules.name(_) == "E5").get
+    on(steps(copiedTo(copied)(place(t(Model.searching(new scala.util.Random(1), 50)(Go.main[App]))))))
 
   test("a game far apart: made by Black, joined by the friend's link, watched; moves seen by all; a resignation") {
     val tables = Tables()
     val a = tables.client(); val placeA = Place.fixed()
-    var black = press(press(program(a, placeA), "Play a friend online"), "I play Black")
+    var black = press(press(press(program(a, placeA), "Play a friend online"), "9 × 9 — a quick game"), "I play Black")
     black = hear(black, a)
     assertEquals(screen(black).title, "Go online")
     assert(texts(black).exists(_.startsWith("You play Black · Black to play")), texts(black).toString)
@@ -73,17 +72,17 @@ class OnlineSuite extends munit.FunSuite:
   test("a move refused by the server comes back with its reason; leaving clears the address") {
     val tables = Tables()
     val a = tables.client(); val place = Place.fixed()
-    var black = hear(press(press(program(a, place), "Play a friend online"), "I play White"), a)
+    var black = hear(press(press(press(program(a, place), "Play a friend online"), "9 × 9 — a quick game"), "I play White"), a)
     assert(texts(black).exists(_.startsWith("You play White · Black to play — waiting")))
     black = press(black, "Leave")
-    assertEquals(screen(black).title, "Go 9 × 9")
+    assertEquals(screen(black).title, "Go")
     assertEquals(place.now, Map.empty[String, String])
   }
 
   test("the links copied by their buttons: the friend's while they have not come, the watchers' always") {
     val tables = Tables()
     val a = tables.client(); val place = Place.fixed()
-    var black = hear(press(press(program(a, place), "Play a friend online"), "I play Black"), a)
+    var black = hear(press(press(press(program(a, place), "Play a friend online"), "13 × 13"), "I play Black"), a)
     black = press(black, "Copy the friend's link")
     val g = place.now("g")
     assert(copied.last.startsWith(s"https://example.org/go/#g=$g&k=") && !copied.last.contains(place.now("k")))

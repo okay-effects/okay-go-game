@@ -31,7 +31,7 @@ def run(page: String, pictures: String): Unit =
   def has(s: String) = p.waitForFunction(s"() => document.body.textContent.includes('$s')")
   def stones = p.locator("rect[class*='okay-mark-go-black'], rect[class*='okay-mark-go-white']").count()
   def shot(name: String) = p.screenshot(Page.ScreenshotOptions().setPath(Path.of(pictures, name)).setFullPage(true))
-  button("Two players").click()
+  button("Two players").click(); button("9 × 9 — a quick game").click()
   for (m, k) <- Seq("E5", "E4", "D4", "F5", "D5").zipWithIndex do
     point(m).click(); has(s"move ${k + 2}")
   if stones != 5 then fail(s"$stones stones, not 5")
@@ -41,22 +41,24 @@ def run(page: String, pictures: String): Unit =
   if !p.locator("#app").textContent().matches("(?s).*(Black|White) wins by .*") then fail("no result")
   shot("go-end.png")
   button("Back to the menu").click()
-  button("Play Black against the model").click()
-  button("Beginner — twelve numbers, no reading ahead").click()
+  button("Play Black against the model").click(); button("9 × 9 — a quick game").click()
   for m <- Seq("E5", "C3", "G7") do
-    if point(m).count() == 1 then { point(m).click(); has("The model played") }
+    if point(m).count() == 1 then
+      val t0 = System.nanoTime(); point(m).click(); has("The model played")
+      val said = "\\d+ games played out".r.findFirstIn(p.locator("#app").textContent()).getOrElse("")
+      println(s"9 x 9 reply: ${(System.nanoTime() - t0) / 1000000} ms; $said")
   if stones < 4 then fail(s"$stones stones after three moves and replies")
   shot("go-model.png")
-  // the Stronger model: its replies timed, its thought shown
+  // the full board against the model: its replies timed, how many games it played out
   button("Menu").click(); button("Play Black against the model").click()
-  button("Stronger — a search that plays thousands of games out").click()
+  button("19 × 19 — the full board").click()
   var ms = List.empty[Long]
-  for (m, k) <- Seq("E5", "C3", "G7", "C7").zipWithIndex if point(m).count() == 1 do
+  for (m, k) <- Seq("D4", "Q16", "D16").zipWithIndex if point(m).count() == 1 do
     val t0 = System.nanoTime(); point(m).click(); has(s"move ${2 * k + 3}")
     ms :+= (System.nanoTime() - t0) / 1000000
-  if !p.locator("#app").textContent().contains("chance to win") then fail("no thought shown")
-  println(s"stronger replies: ${ms.mkString(", ")} ms")
-  shot("go-stronger.png")
+  val thought = "\\d+ games played out".r.findFirstIn(p.locator("#app").textContent()).getOrElse(fail("no thought"))
+  println(s"19 x 19 replies: ${ms.mkString(", ")} ms; $thought")
+  shot("go-19.png")
   if errors.nonEmpty then fail("page errors: " + errors.mkString("; "))
   println(s"e2e: ok ($stones stones against the model)")
   browser.close(); pw.close()

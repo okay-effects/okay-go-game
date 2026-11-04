@@ -17,9 +17,9 @@ object Room:
     case "white" => White
     case _ => Watch
 
-  final case class Game(black: String, white: String, moves: Vector[Int], resigned: Option[Int]):
+  final case class Game(size: Int, black: String, white: String, moves: Vector[Int], resigned: Option[Int]):
     lazy val position: Rules.Position =
-      moves.foldLeft(Rules.start)((p, m) => if m < 0 then Rules.pass(p) else Rules.play(p, m))
+      moves.foldLeft(Rules.startOf(size))((p, m) => if m < 0 then Rules.pass(p) else Rules.play(p, m))
     def over: Boolean = resigned.isDefined || position.over
     def seat(key: String): Int = if key == black then Black else if key == white then White else Watch
 
@@ -44,13 +44,14 @@ object Room:
     case Action.Resign => Json.obj("resign" -> Json.Bool(true)))
   def readAction(text: String): Option[Action] = Descent.parse(text).toOption.collect { case o: Json.Obj => o }
     .flatMap { o =>
-      o.get("move").collect { case Json.Num(n) if n.isValidInt && Rules.points.contains(n.toInt) => Action.Move(n.toInt) }
+      o.get("move").collect { case Json.Num(n) if n.isValidInt && n >= 0 => Action.Move(n.toInt) }
         .orElse(o.get("pass").collect { case Json.Bool(true) => Action.Pass })
         .orElse(o.get("resign").collect { case Json.Bool(true) => Action.Resign })
     }
 
   /** the game as stored */
-  def write(g: Game): Json = Json.obj("black" -> Json.Str(g.black), "white" -> Json.Str(g.white),
+  def write(g: Game): Json = Json.obj("size" -> Json.Num(BigDecimal(g.size)), "black" -> Json.Str(g.black),
+    "white" -> Json.Str(g.white),
     "moves" -> Json.Arr(g.moves.map(m => Json.Num(BigDecimal(m)))),
     "resigned" -> g.resigned.fold[Json](Json.Null)(c => Json.Num(BigDecimal(c))))
   def read(j: Json): Option[Game] = j match
@@ -59,30 +60,36 @@ object Room:
         case Json.Str(b) <- o.get("black")
         case Json.Str(w) <- o.get("white")
         case Json.Arr(ms) <- o.get("moves")
-      yield Game(b, w, ms.collect { case Json.Num(n) => n.toInt },
+      yield Game(sizeOf(o), b, w, ms.collect { case Json.Num(n) => n.toInt },
         o.get("resigned").collect { case Json.Num(n) => n.toInt })
     case _ => None
 
   /** WHAT A SOCKET IS TOLD: the moves and the resignation, its own seat, who of the players is here, how many watch,
    * and the reason its last action was refused */
-  final case class View(moves: Vector[Int], resigned: Option[Int], seat: Int, black: Boolean, white: Boolean,
-      watching: Int, error: Option[String] = None):
-    lazy val game: Game = Game("", "", moves, resigned)
+  final case class View(size: Int, moves: Vector[Int], resigned: Option[Int], seat: Int, black: Boolean,
+      white: Boolean, watching: Int, error: Option[String] = None):
+    lazy val game: Game = Game(size, "", "", moves, resigned)
 
-  def writeView(v: View): String = Json.print(Json.Obj(Vector(
+  def writeView(v: View): String = Json.print(Json.Obj(Vector("size" -> Json.Num(BigDecimal(v.size)),
     "moves" -> Json.Arr(v.moves.map(m => Json.Num(BigDecimal(m)))),
     "resigned" -> v.resigned.fold[Json](Json.Null)(c => Json.Num(BigDecimal(c))),
     "seat" -> Json.Str(seatName(v.seat)), "black" -> Json.Bool(v.black), "white" -> Json.Bool(v.white),
     "watching" -> Json.Num(BigDecimal(v.watching))) ++ v.error.map(e => "error" -> Json.Str(e))))
-  def readView(text: String): Option[View] = Descent.parse(text).toOption.collect { case o: Json.Obj => o }.flatMap { o =>
+  def readView(text: String): Option[View] =
+    Descent.parse(text).toOption.collect { case o: Json.Obj => o }.flatMap { o =>
     for
       case Json.Arr(ms) <- o.get("moves")
       case Json.Str(seat) <- o.get("seat")
-    yield View(ms.collect { case Json.Num(n) => n.toInt }, o.get("resigned").collect { case Json.Num(n) => n.toInt },
+    yield View(sizeOf(o), ms.collect { case Json.Num(n) => n.toInt },
+      o.get("resigned").collect { case Json.Num(n) => n.toInt },
       seatOf(seat), o.get("black").contains(Json.Bool(true)), o.get("white").contains(Json.Bool(true)),
       o.get("watching").collect { case Json.Num(n) => n.toInt }.getOrElse(0),
       o.get("error").collect { case Json.Str(e) => e })
   }
+
+  /** a board's size as said, one of the sizes; 9 when not said (a game kept before sizes) */
+  def sizeOf(o: Json.Obj): Int = o.get("size").collect { case Json.Num(n) if n.isValidInt => n.toInt }
+    .filter(Geometry.sizes.contains).getOrElse(9)
 
   /** an id or a key: 32 lowercase hex digits */
   def wellFormed(s: String): Boolean = s.length == 32 && s.forall(c => c.isDigit || (c >= 'a' && c <= 'f'))

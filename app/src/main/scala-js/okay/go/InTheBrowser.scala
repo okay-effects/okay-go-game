@@ -13,10 +13,17 @@ object InTheBrowser:
    * stone to be played when the pointer is over it */
   val skin: Skin =
     val calm = Skin.calm(accent = "#8a5a2b", deep = "#4a2f14")
-    val inset = f"${100.0 * (Board.margin - Board.cell / 2) / Board.size}%.4f%%"
+    // the points' grid of each size: inset by half a cell from the picture's edge, a column and a row a point
+    val grids = Geometry.sizes.map { n =>
+      val inset = f"${100.0 * (Board.margin - Board.cell / 2) / Board.side(n)}%.4f%%"
+      s"""body .okay-mark-go [class$$="-$n"][class*="okay-mark-go-points"] { inset: $inset; }
+         |body .okay-mark-go [class$$="-$n"][class*="okay-mark-go-points"] > .okay-group {
+         |  grid-template-columns: repeat($n, minmax(0, 1fr)); grid-template-rows: repeat($n, minmax(0, 1fr)); }
+         |""".stripMargin
+    }.mkString
     calm.copy(css = calm.css + s"""
       |body .okay-mark-go { display: block; }
-      |body .okay-mark-go > .okay-group { position: relative; width: min(100%, 480px); margin: 0 auto; padding: 0;
+      |body .okay-mark-go > .okay-group { position: relative; width: min(100%, 640px); margin: 0 auto; padding: 0;
       |  gap: 0; border: 0; background: none; box-shadow: none; }
       |body .okay-mark-go .okay-picture-frame { margin: 0; max-width: none; }
       |body .okay-mark-go .okay-picture { border-radius: 6px; box-shadow: var(--ui-shadow); }
@@ -29,11 +36,10 @@ object InTheBrowser:
       |body .okay-mark-go-area-black { fill: #161616; }
       |body .okay-mark-go-area-white { fill: #f8f6ef; stroke: #6b6b6b; stroke-width: 1px; }
       |body .okay-mark-go .okay-picture-label { font: 600 12px var(--okay-font); fill: #3b2a14; }
-      |body .okay-mark-go [class*="okay-mark-go-points"] { position: absolute; inset: $inset; display: block; }
+      |body .okay-mark-go [class*="okay-mark-go-points"] { position: absolute; display: block; }
       |body .okay-mark-go [class*="okay-mark-go-points"] > .okay-group { display: grid; height: 100%;
-      |  grid-template-columns: repeat(9, minmax(0, 1fr)); grid-template-rows: repeat(9, minmax(0, 1fr));
       |  gap: 0; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
-      |body .okay-mark-go .okay-mark-pt { position: relative; display: block; min-width: 0; }
+      |$grids      |body .okay-mark-go .okay-mark-pt { position: relative; display: block; min-width: 0; }
       |body .okay-mark-go .okay-mark-pt > .okay-group, body .okay-mark-go .okay-mark-pt .okay-mark-slot,
       |body .okay-mark-go .okay-mark-pt .okay-mark-slot > .okay-group, body .okay-mark-go .okay-mark-pt .okay-mark-button {
       |  position: absolute; inset: 0; display: block; margin: 0; padding: 0; border: 0; background: none;
@@ -46,7 +52,7 @@ object InTheBrowser:
       |""".stripMargin)
 
   def main(args: Array[String]): Unit =
-    // the model in the page: a Stronger move at most 4000 games played out, or 1.5 s
-    val model = Model.toy(playouts = 4000, millis = 1500)
-    val world = okay.business.web.InThePage.clipboard(PageAddress()(Sockets(Sockets.server)(model(Go.main[App]))))
+    // the model thinks between the page's frames (`Thinking`); the links copied by the browser's clipboard
+    val world = okay.business.web.InThePage.clipboard(PageAddress()(Sockets(Sockets.server)(Thinking()(
+      Go.main[App]))))
     Page.mount(OnFaces.program(steps(world)), skin)

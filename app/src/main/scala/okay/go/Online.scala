@@ -5,17 +5,17 @@ import okay.go.Room.{Action, View}
 
 /** A NEW GAME FAR APART: its id, the creator's colour and key, the friend's key — and both keys, which the first
  * socket brings to make the game */
-final case class Invite(game: String, colour: Int, black: String, white: String):
+final case class Invite(game: String, colour: Int, black: String, white: String, size: Int = 9):
   def mine: String = if colour == Rules.Black then black else white
   def friend: String = if colour == Rules.Black then white else black
 
 /** what the server said, numbered as it came */
 final case class Seen(n: Int, view: View)
 
-/** THE REMOTE TABLE OF A GAME FAR APART, as an effect: the program makes a game, sits at one, hears what happens, acts. Where
- * the game is — a server's object over a socket, or a test's memory — is a handler's */
+/** THE REMOTE TABLE OF A GAME FAR APART, as an effect: the program makes a game, sits at one, hears what happens,
+ * acts. Where the game is — a server's object over a socket, or a test's memory — is a handler's */
 enum Remote[X]:
-  case Create(colour: Int) extends Remote[Invite]
+  case Create(colour: Int, size: Int) extends Remote[Invite]
   case Join(game: String, key: Option[String], make: Option[Invite]) extends Remote[Unit]
   /** what the server says after the `after`th thing it said: answered at once when that has come already */
   case Updates(after: Int) extends Remote[Events[Seen]]
@@ -54,7 +54,7 @@ final class Tables:
     val here = clients.filter(_.game.contains(id))
     val g = games(id)
     def present(seat: Int) = here.exists(_.seat == seat)
-    here.foreach(c => c.hear(View(g.moves, g.resigned, c.seat, present(Rules.Black), present(Rules.White),
+    here.foreach(c => c.hear(View(g.size, g.moves, g.resigned, c.seat, present(Rules.Black), present(Rules.White),
       here.count(_.seat == Room.Watch))))
   def client(): Client = { val c = Client(); clients :+= c; c }
 
@@ -68,10 +68,10 @@ final class Tables:
       val s = Seen(seen.size + 1, v); seen :+= s; listeners.foreach(_(s))
     def apply[R[_], Rest[_], A](p: A ! R)(using Split[Remote, R, Rest]): A ! Rest =
       handle(p, Handler.Tail[Remote, Rest, A, A](a => pure(a), [X] => (asked: Remote[X]) => asked match
-        case Remote.Create(colour) => Invite(fresh(), colour, fresh(), fresh())
+        case Remote.Create(colour, size) => Invite(fresh(), colour, fresh(), fresh(), size)
         case Remote.Join(id, key, make) =>
           if !games.contains(id) then make.filter(i => key.contains(i.mine)).foreach(i =>
-            games += id -> Room.Game(i.black, i.white, Vector.empty, None))
+            games += id -> Room.Game(i.size, i.black, i.white, Vector.empty, None))
           games.get(id).foreach { g => game = Some(id); seat = g.seat(key.getOrElse("")); tell(id) }
         case Remote.Updates(after) => Events[Seen] { k =>
           val l: Seen => Unit = s => if s.n > after then k(s)
@@ -84,7 +84,7 @@ final class Tables:
             case Right(next) => games += id -> next; tell(id)
             case Left(why) =>
               val g = games(id)
-              hear(View(g.moves, g.resigned, seat, true, true, 0, Some(why)))
+              hear(View(g.size, g.moves, g.resigned, seat, true, true, 0, Some(why)))
         }
         case Remote.Leave() => game.foreach { id => game = None; tell(id) }))
 
@@ -101,14 +101,16 @@ object Online:
     case Pass, Resign, Leave
 
   def start[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]]: Unit ! R =
-    menu[Int, R]("Play a friend online", "I play Black" -> Rules.Black, "I play White" -> Rules.White,
-      "Back" -> 0).flatMap {
+    Go.sized[R](size => menu[Int, R]("Play a friend online", "I play Black" -> Rules.Black,
+      "I play White" -> Rules.White, "Back" -> 0).flatMap {
       case 0 => pure(())
-      case colour => perform[Remote](Remote.Create(colour)).flatMap(i => join[R](i.game, Some(i.mine), Some(i)))
-    }
+      case colour => perform[Remote](Remote.Create(colour, size))
+        .flatMap(i => join[R](i.game, Some(i.mine), Some(i)))
+    })
 
   /** sat at game `g` with `key` (none: watching), the game made if it is new (`made`); the page's address its link */
-  def join[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]](g: String, key: Option[String], made: Option[Invite]): Unit ! R =
+  def join[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]](g: String, key: Option[String],
+      made: Option[Invite]): Unit ! R =
     perform[Place](Place.Write(Map("g" -> g) ++ key.map("k" -> _))).andThen(
     perform[Remote](Remote.Join(g, key, made))).andThen(
     perform[Place](Place.Base())).flatMap(base => screen[R](base, g, made, None, sent = false, None))
@@ -149,7 +151,7 @@ object Online:
             Part.text(s"$who · $state · move ${pos.moves + 1}"), Part.text(present)) ++
             v.error.map(Part.warning) ++ (if game.over then List(Part.info(state)) else Nil) ++ note ++
             List(links(base, g, made.filter(_ => inviting)))
-          val acts = legal.map(p => Button(Rules.name(p))(Act.Stone(p)).at(s"p$p")) ++
+          val acts = legal.map(p => Button(pos.name(p))(Act.Stone(p)).at(s"p$p")) ++
             (if mine then Seq(Button("Pass")(Act.Pass)) else Nil) ++
             (if player && !game.over then Seq(Button("Resign", Style.Danger)(Act.Resign)) else Nil) ++
             copies(inviting) :+ leave

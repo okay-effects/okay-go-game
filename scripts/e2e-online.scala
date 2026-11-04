@@ -36,7 +36,8 @@ def run(page: String): Unit =
 
   val black = person()
   black.navigate(page)
-  button(black, "Play a friend online").click(); button(black, "I play Black").click()
+  button(black, "Play a friend online").click(); button(black, "13 × 13").click()
+  button(black, "I play Black").click()
   has(black, "Black here")
   val lines = black.locator("#app").innerText().linesIterator.map(_.trim).toVector
   val shown = lines.find(l => l.contains("#g=") && l.contains("&k=")).getOrElse(fail("no friend's link"))
@@ -55,6 +56,7 @@ def run(page: String): Unit =
   point(white, "D4").click()
   has(black, "Black to play · move 3"); has(watcher, "Black to play · move 3")
   if stones(watcher) != 2 then fail("the watcher does not see both stones")
+  if black.locator("[class$=\"-13\"][class*=\"okay-mark-go-points\"]").count() != 1 then fail("not a 13 x 13 board")
   if point(watcher, "C3").count() != 0 then fail("a watcher has buttons")
   black.screenshot(Page.ScreenshotOptions().setPath(Path.of("/tmp/go-online-black.png")).setFullPage(true))
   watcher.screenshot(Page.ScreenshotOptions().setPath(Path.of("/tmp/go-online-watch.png")).setFullPage(true))

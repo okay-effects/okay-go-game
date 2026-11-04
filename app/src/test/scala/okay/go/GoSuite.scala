@@ -4,116 +4,93 @@ import okay.business.scala3.*
 import okay.go.Rules.*
 import okay.go.Go.App
 
-/** GO: the rules (captures, suicide, ko, the score by area), and the whole application by its buttons — two players,
- * and a person against the toy model, whose every move is legal */
+/** GO: the rules on every board (captures, suicide, ko, the score by area), and the whole application by its
+ * buttons — two players, and a person against the model, whose every move is legal */
 class GoSuite extends munit.FunSuite:
-  /** the application with its world: the model given, no game far apart, the page's address empty */
-  def app(toy: Handles[Model]): Step[Unit] = steps(copiedTo(scala.collection.mutable.Buffer.empty[String])(Place.fixed()(Tables().client()(
-    toy(Go.main[App])))))
-  def p(name: String): Int = points.find(Rules.name(_) == name).get
-  /** a position from moves by name, "pass" a pass */
+  /** the application with its world: the model a search of `playouts` games, no game far apart, no address */
+  def app(playouts: Int = 200, seed: Int = 1): Step[Unit] = steps(copiedTo(scala.collection.mutable.Buffer.empty[String])(
+    Place.fixed()(Tables().client()(Model.searching(new scala.util.Random(seed), playouts)(Go.main[App])))))
+  val nine: Geometry = Geometry(9)
+  def p(name: String): Int = nine.point(name).get
+  /** a 9 x 9 position from moves by name, "pass" a pass */
   def moves(ms: String*): Position = ms.foldLeft(start)((pos, m) => if m == "pass" then pass(pos) else play(pos, p(m)))
+  def texts(played: Played[?]): List[String] = played.at.toList.flatMap(_.parts).collect {
+    case Part.Text(s) => s
+    case Part.Notice(_, s) => s
+  }
 
-  test("names: A9 the top left, J1 the bottom right, no I") {
-    assertEquals(Rules.name(0), "A9"); assertEquals(Rules.name(80), "J1"); assertEquals(Rules.name(40), "E5")
+  test("the boards: 9, 13, 19 — names (no I), star points, komi") {
+    assertEquals((nine.name(0), nine.name(80), nine.name(40)), ("A9", "J1", "E5"))
+    val big = Geometry(19)
+    assertEquals((big.name(0), big.name(360), big.name(180)), ("A19", "T1", "K10"))
+    assertEquals(big.stars.size, 9); assertEquals(Geometry(13).stars.size, 5); assertEquals(nine.stars.size, 5)
+    assertEquals((nine.komi, Geometry(13).komi, big.komi), (6.5, 7.5, 7.5))
+    assertEquals(legal(startOf(19)).size, 361)
   }
 
   test("a stone with no liberty is captured; the capture counted") {
-    // White A9 surrounded by Black B9 and A8
     val pos = moves("B9", "A9", "A8")
     assertEquals(pos.board(p("A9")), Empty)
     assertEquals(pos.captured(Black), 1)
   }
 
-  test("suicide is not allowed; a move that captures is") {
-    val pos = moves("B9", "E5", "A8") // White to play: A9 would have no liberty
+  test("suicide is not allowed; a taken point; a point off the board") {
+    val pos = moves("B9", "E5", "A8")
     assertEquals(tryPlay(pos, p("A9")).left.toOption, Some(Why.Suicide))
-    assert(!legal(pos).contains(p("A9")))
     assertEquals(tryPlay(pos, p("B9")).left.toOption, Some(Why.Occupied))
+    assertEquals(tryPlay(pos, 81).left.toOption, Some(Why.Outside))
   }
 
-  test("ko: retaking at once would repeat the position, so it is not allowed") {
-    // Black: D5 E6 E4 F5... a ko at E5/F5: Black D5, E4, E6; White F4, F6, G5, then White E5 is captured by Black F5
+  test("ko: retaking at once would repeat the position, so it is not allowed; later it is") {
     val pos = moves("D5", "F4", "E4", "F6", "E6", "G5", "J1", "E5", "F5")
-    assertEquals(pos.board(p("E5")), Empty, "Black F5 took E5")
+    assertEquals(pos.board(p("E5")), Empty)
     assertEquals(tryPlay(pos, p("E5")).left.toOption, Some(Why.Repeats))
-    // after a move elsewhere and a reply, it may be retaken
     val later = moves("D5", "F4", "E4", "F6", "E6", "G5", "J1", "E5", "F5", "A1", "B1")
     assert(tryPlay(later, p("E5")).isRight)
   }
 
-  test("the score by area: an empty board, then a wall") {
-    assertEquals(score(empty), (0, komi))
-    // a black wall on column E: Black owns A..E (45), White nothing; Black wins
-    val wall = (0 until N).foldLeft(empty)((b, r) => b.updated(r * N + 4, Black))
-    assertEquals(score(wall), (81, komi))
-    val half = (0 until N).foldLeft(wall)((b, r) => b.updated(r * N + 5, White))
-    assertEquals(score(half), (45, 36 + komi))
+  test("the score by area, the board's komi") {
+    assertEquals(score(empty(9)), (0, 6.5))
+    val wall = (0 until 9).foldLeft(empty(9))((b, r) => b.updated(r * 9 + 4, Black))
+    val half = (0 until 9).foldLeft(wall)((b, r) => b.updated(r * 9 + 5, White))
+    assertEquals(score(half), (45, 36 + 6.5))
     assertEquals(result(half), "Black wins by 2.5")
+    assertEquals(score(empty(19)), (0, 7.5))
   }
 
-  test("two players by buttons: stones placed, a taken point has no button, two passes end the game") {
-    def play2(acts: Act*) = Play(app(Model.toy(new scala.util.Random(1))), acts*)
-    val p1 = play2(Act.press("Two players"), Act.press("E5"))
-    assert(p1.at.get.buttons.forall(_.label != "E5"), "E5 taken: no button")
-    assert(p1.at.get.parts.collect { case Part.Text(s) => s }.head.startsWith("White to play"))
-    val over = play2(Act.press("Two players"), Act.press("E5"), Act.press("Pass"), Act.press("Pass"))
+  test("two players on 13 x 13 by buttons: the size chosen, a taken point has no button, two passes end it") {
+    def play2(acts: Act*) = Play(app(), acts*)
+    val p1 = play2(Act.press("Two players"), Act.press("13 × 13"), Act.press("G7"))
+    assert(p1.at.get.buttons.forall(_.label != "G7") && p1.at.get.buttons.exists(_.label == "N13"))
+    assert(texts(p1).head.startsWith("White to play"))
+    val over = play2(Act.press("Two players"), Act.press("13 × 13"), Act.press("G7"), Act.press("Pass"),
+      Act.press("Pass"))
     assertEquals(over.at.map(_.title), Some("Game over"))
-    val info = over.at.get.parts.collect { case Part.Notice(_, s) => s }
-    assertEquals(info, List("Black wins by 74.5"))
+    assertEquals(texts(over).head, "Black wins by 161.5")
   }
 
-  test("against the toy: it answers each move with a legal one, says what it wanted, and the game can end") {
-    val toy = Model.toy(new scala.util.Random(5))
-    def run(acts: Act*) = Play(app(toy), acts*)
-    val p1 = run(Act.press("Play Black against the model"), Act.press(Strength.Beginner.label), Act.press("E5"))
-    val said = p1.at.get.parts.collect { case Part.Details(rows) => rows.map((k, v) => k -> v.text) }.head
-    assertEquals(said.map(_._1), List("The model wanted", "The model played"), said.toString)
-    val pic = p1.at.get.parts.collect { case Part.Block("go", _, ps) => ps.collect { case Part.Picture(_, _, _, t) =>
-      t } }.flatten.head
-    assertEquals(pic.split(", ").length, 2, pic)
-    // the model's moves through a long game are all legal: Rules.play throws on an illegal one
-    var pos = start; val r = new scala.util.Random(9)
-    for _ <- 1 to 150 if !pos.over do
-      val logits = Model.logits(pos, () => r.nextFloat())
-      val k = (legal(pos) :+ points.size).maxBy(logits)
-      pos = if k == points.size then pass(pos) else play(pos, k)
-    assert(pos.moves > 20, s"${pos.moves} moves")
-  }
-
-  test("as White against the model: the model moves first") {
-    val p1 = Play(app(Model.toy(new scala.util.Random(2))), Act.press("Play White against the model"),
-      Act.press(Strength.Beginner.label))
-    assert(p1.at.get.parts.collect { case Part.Text(s) => s }.head.startsWith("You play White · White to play"))
-  }
-
-  test("Stronger: the search beats the toy, as Black and as White; its moves legal; its thought shown") {
-    val r = new scala.util.Random(11)
-    var wins = 0
-    for strong <- Seq(Black, White, Black, White) do
-      var pos = start
-      while !pos.over && pos.moves < 250 do
-        val logits = if pos.toPlay == strong then Model.searched(pos, 400, r).logits
-          else Model.logits(pos, () => r.nextFloat())
-        val k = (legal(pos) :+ points.size).maxBy(logits)
-        pos = if k == points.size then pass(pos) else play(pos, k)
-      val (b, w) = score(pos.board)
-      if (b > w) == (strong == Black) then wins += 1
-    assertEquals(wins, 4)
-    val p1 = Play(app(Model.toy(new scala.util.Random(3), playouts = 300)), Act.press("Play Black against the model"),
-      Act.press(Strength.Stronger.label), Act.press("E5"))
+  test("against the model: it answers with a legal move and says what it thinks; as White it begins") {
+    val p1 = Play(app(), Act.press("Play Black against the model"), Act.press("9 × 9 — a quick game"), Act.press("E5"))
     val said = p1.at.get.parts.collect { case Part.Details(rows) => rows.map((k, v) => k -> v.text) }.head.toMap
-    assert(said("The model thinks").matches("a \\d+% chance to win after [A-J]\\d — 300 games played out"), said)
-    assertEquals(said("The model wanted"), said("The model played"))
+    assert(said("The model thinks").matches("a \\d+% chance to win — 200 games played out, [A-J]\\d the best"), said)
+    assert(nine.point(said("The model played")).isDefined, said)
+    val p2 = Play(app(), Act.press("Play White against the model"), Act.press("19 × 19 — the full board"))
+    assert(texts(p2).head.startsWith("You play White · White to play · move 2"), texts(p2).toString)
   }
 
-  test("Stronger passes when the opponent passed and the board as it stands is won; not when it is lost") {
-    // Black owns everything left of a wall at E; White has passed
-    val wall = (0 until N).foldLeft(empty)((b, r) => b.updated(r * N + 4, Black).updated(r * N + 5, White))
+  test("the model passes when the opponent passed and the board as it stands is won") {
+    val wall = (0 until 9).foldLeft(empty(9))((b, r) => b.updated(r * 9 + 4, Black).updated(r * 9 + 5, White))
     val won = Position(wall, Black, Set(wall), 1, Map(Black -> 0, White -> 0), None, 40)
-    val t = Model.searched(won, 200, new scala.util.Random(1))
-    assertEquals(t.logits.indices.maxBy(t.logits), points.size, "a pass: 45 to 36 + 6.5")
-    val lost = won.copy(toPlay = White)
-    val t2 = Model.searched(lost, 200, new scala.util.Random(1))
-    assert(t2.logits.indices.maxBy(t2.logits) != points.size || t2.note.exists(_.contains("nothing")), t2.note)
+    val s = Searcher(won, new scala.util.Random(1)); s.run(200)
+    assertEquals(Model.answer(won, s).move, won.passIndex)
+  }
+
+  test("the model's games: all its moves legal to the end, on 9 x 9 and 13 x 13") {
+    for size <- Seq(9, 13) do
+      var pos = startOf(size); val r = new scala.util.Random(3)
+      while !pos.over && pos.moves < 400 do
+        val s = Searcher(pos, r); s.run(60)
+        val t = Model.answer(pos, s)
+        pos = if t.move == pos.passIndex then pass(pos) else play(pos, t.move)
+      assert(pos.over, s"$size: ${pos.moves} moves")
   }

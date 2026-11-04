@@ -50,9 +50,10 @@ final class Sockets(server: String) extends Handles[Remote]:
 
   def apply[R[_], Rest[_], A](p: A ! R)(using Split[Remote, R, Rest]): A ! Rest =
     handle(p, Handler.Tail[Remote, Rest, A, A](a => pure(a), [X] => (asked: Remote[X]) => asked match
-      case Remote.Create(colour) => Invite(fresh(), colour, fresh(), fresh())
+      case Remote.Create(colour, size) => Invite(fresh(), colour, fresh(), fresh(), size)
       case Remote.Join(game, key, make) =>
-        val query = (key.map("key" -> _).toList ++ make.toList.flatMap(i => List("black" -> i.black,
+        val query = (key.map("key" -> _).toList ++ make.toList.flatMap(i => List("size" -> i.size.toString,
+          "black" -> i.black,
           "white" -> i.white))).map((k, v) => s"$k=$v").mkString("&")
         socket.foreach(_.close()); socket = None; heard = Vector.empty
         address = Some(s"$server/games/$game/socket" + (if query.isEmpty then "" else "?" + query))

@@ -1,6 +1,6 @@
 package okay.go.server
 
-import okay.go.{Room, Rules}
+import okay.go.{Geometry, Room, Rules}
 import okay.go.Room.Action
 import okay.http.Request
 import okay.serverless.cloud.MemoryCloud
@@ -28,8 +28,8 @@ class GamesSuite extends munit.FunSuite:
   def last(s: MemoryCloud#MemorySocket): Room.View = Room.readView(s.received.last).get
   def act(c: MemoryCloud, s: MemoryCloud#MemorySocket, a: Action): Unit =
     await(s.send(Room.writeAction(a))); await(c.settled())
-  val e5 = Rules.points.find(Rules.name(_) == "E5").get
-  val d4 = Rules.points.find(Rules.name(_) == "D4").get
+  val e5 = Geometry(9).point("E5").get
+  val d4 = Geometry(9).point("D4").get
 
   test("the first socket with both keys makes the game; each socket is told its seat; a watcher is counted") {
     val c = cloud()
@@ -101,4 +101,16 @@ class GamesSuite extends munit.FunSuite:
     assert(!c.stored(Games.namespace, id).contains("game"), c.stored(Games.namespace, id).toString)
     val r = await(c.serve(Games.Lobby)(Request("GET", s"/games/$id/socket?key=$white")))
     assertEquals(r.status, 404)
+  }
+
+  test("a game of 19 x 19: its size kept and told; an unknown size made a 9 x 9 one") {
+    val c = cloud()
+    val b = socket(c, s"key=$black&black=$black&white=$white&size=19")
+    assertEquals(last(b).size, 19)
+    val t1 = Geometry(19).point("T1").get
+    act(c, b, Action.Move(t1))
+    assertEquals(last(b).moves, Vector(t1))
+    val other2 = "0" * 31 + "1"
+    val r = await(c.serve(Games.Lobby)(Request("GET", s"/games/$other2/socket?key=$black&black=$black&white=$white&size=7")))
+    assertEquals(r.status, 101)
   }
