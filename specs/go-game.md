@@ -122,3 +122,21 @@ Monte-Carlo tree search with RAVE and prior knowledge, on a fast board of any si
   friend's link, a watcher) to the end, a reload keeping the seat: on `wrangler dev`, on the live Worker with the
   live page, and on the host.
 
+
+## A neural model (operator, 2026-11-04: "the third way" — in progress)
+
+The plan, in order; each step checked before the next:
+
+1. A CPU reference of a KataGo network in Scala (module `net`, JVM and Scala.js): the weights `nets/g170e-b10c128-
+   s1141046784-d204142634.txt.gz` (KataGo's v1.3 release, the g170 run — CC0, katagotraining.org/network_license),
+   model version 8, inputs version 7 (22 spatial, 19 global: stones, liberties, ko, five moves of history, ladders,
+   pass-alive area, komi and rules). The text format, the forward pass and the inputs as written down from KataGo's
+   sources (`/tmp/katago-v8-spec.md` during the work; the facts kept in `net`'s comments). Checked against KataGo
+   itself (Homebrew's `katago`, `kata-raw-nn`, FP32): its outputs for a set of positions kept as a fixture, the
+   reference equal to them within float rounding.
+2. A search with the network (PUCT, as AlphaZero and KataGo: the policy as priors, the value at the leaves, no
+   playouts) on the JVM, measured against the present MCTS on 9 × 9 and 19 × 19.
+3. The network on WebGPU in the page (WGSL), equal to the CPU reference; the weights converted to a binary file at
+   build time; the CPU reference where WebGPU is missing.
+4. A network of our own, trained on the Mac by mlx-scala (supervised on games the search plays), in the same format.
+5. okay-inlay: the legal-move mask (and liberties) as weights of the network — no illegal move without outside code.

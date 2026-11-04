@@ -33,13 +33,16 @@ object Rules:
   /** A POSITION: the board, who plays, every board seen (no repeat), passes in a row, stones captured by each colour,
    * the last move */
   final case class Position(board: Board, toPlay: Int, seen: Set[Board], passes: Int, captured: Map[Int, Int],
-      last: Option[Int], moves: Int):
+      last: Option[Int], moves: Int, record: Vector[Int] = Vector.empty, boards: List[Board] = Nil):
     def over: Boolean = passes >= 2
     def geo: Geometry = Rules.geo(board)
     def size: Int = geo.size
     /** the index that stands for a pass, after the points */
     def passIndex: Int = board.length
     def name(p: Int): String = if p == passIndex then "pass" else geo.name(p)
+    /** the board `k` moves ago (0: now), as far as it is kept — the last two, for a network's inputs */
+    def boardAgo(k: Int): Board =
+      if k == 0 then board else boards.lift(k - 1).getOrElse(boards.lastOption.getOrElse(board))
 
   def startOf(size: Int): Position =
     val b = empty(size)
@@ -64,11 +67,12 @@ object Rules:
 
   def play(pos: Position, p: Int): Position = tryPlay(pos, p) match
     case Right((nb, taken)) => Position(nb, other(pos.toPlay), pos.seen + nb, 0,
-        pos.captured.updated(pos.toPlay, pos.captured(pos.toPlay) + taken), Some(p), pos.moves + 1)
+        pos.captured.updated(pos.toPlay, pos.captured(pos.toPlay) + taken), Some(p), pos.moves + 1, pos.record :+ p,
+        (pos.board :: pos.boards).take(2))
     case Left(why) => throw IllegalArgumentException(s"${pos.name(p)}: ${why.text}")
 
   def pass(pos: Position): Position = pos.copy(toPlay = other(pos.toPlay), passes = pos.passes + 1, last = None,
-    moves = pos.moves + 1)
+    moves = pos.moves + 1, record = pos.record :+ pos.passIndex, boards = (pos.board :: pos.boards).take(2))
 
   /** who each point belongs to by area: a stone its colour; an empty region the colour it alone reaches, else none */
   def area(b: Board): Vector[Int] = regions(b).map(_._1)

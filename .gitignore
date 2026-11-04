@@ -4,3 +4,4 @@ target/
 .bloop/
 .idea/
 .scala-build/
+gtp_logs/

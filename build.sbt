@@ -27,6 +27,12 @@ lazy val core = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Pure).
   .settings(name := "okay-go-game-core", publish / skip := true,
     libraryDependencies ++= Seq("io.github.okay-effects" %%% "okay-effects-json" % "0.1.1", munit.value))
 
+/** THE NETWORK: a KataGo network's reference on the CPU, its inputs, its search (specs/go-game.md, "A neural model") */
+lazy val net = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Full).in(file("net"))
+  .dependsOn(core)
+  .settings(name := "okay-go-game-net", publish / skip := true, libraryDependencies += munit.value,
+    Test / fork := true, Test / javaOptions += "-Xmx4g", Test / baseDirectory := (ThisBuild / baseDirectory).value)
+
 /** THE PAGE: okay-ui's screens on okay-faces' Laminar face */
 lazy val app = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Pure).in(file("app"))
   .dependsOn(core)
@@ -66,5 +72,6 @@ lazy val server = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Full
     Compile / mainClass := Some("okay.go.server.Serve"),
     run / fork := true, run / baseDirectory := (ThisBuild / baseDirectory).value)
 
-lazy val root = (project in file(".")).aggregate(core.jvm, core.js, app.jvm, app.js, server.jvm, server.js)
+lazy val root = (project in file(".")).aggregate(core.jvm, core.js, net.jvm, net.js, app.jvm, app.js, server.jvm,
+    server.js)
   .settings(publish / skip := true)
