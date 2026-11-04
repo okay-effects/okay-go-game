@@ -25,6 +25,8 @@ object InTheBrowser:
          |""".stripMargin
     }.mkString
     calm.copy(css = calm.css + s"""
+      |body > footer .bar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+      |body > footer .more { margin-left: auto; }
       |body .okay-mark-go { display: block; }
       |body .okay-mark-go > .okay-group { position: relative; width: min(100%, 640px); margin: 0 auto; padding: 0;
       |  gap: 0; border: 0; background: none; box-shadow: none; }

@@ -76,3 +76,14 @@ class NetSuite extends munit.FunSuite:
     println(f"WORST policy $worstP%.2e value $worstV%.2e ownership $worstO%.2e")
     assert(worstP < 1e-4 && worstV < 1e-4 && worstO < 1e-4)
   }
+
+  test("the model as bytes: read back, the same outputs; written for the page") {
+    val bytes = Binary.write(model)
+    val back = Binary.read(bytes)
+    assertEquals(back.parameters, model.parameters)
+    val pos = replay(9, Vector("E5", "C3", "G7"))
+    val (s, g) = Inputs.of(pos)
+    val a = Forward(model).run(9, s, g); val b = Forward(back).run(9, s, g)
+    assert(a.policy.sameElements(b.policy) && a.value.sameElements(b.value))
+    println(s"BINARY ${bytes.length} bytes")
+  }

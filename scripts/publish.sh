@@ -5,6 +5,8 @@ set -e
 cd "$(dirname "$0")/.."
 sbt -batch appJVM/test appJS/web
 out=/tmp/okay-go-game-pages
+# a worktree left by a run that stopped half way is forgotten first
+git worktree prune
 rm -rf "$out"
 git fetch -q origin gh-pages 2>/dev/null && git worktree add -q "$out" gh-pages || git worktree add -q --orphan -b gh-pages "$out"
 rm -f "$out/index.html" "$out/main.js"

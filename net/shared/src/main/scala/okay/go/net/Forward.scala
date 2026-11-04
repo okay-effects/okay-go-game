@@ -14,33 +14,46 @@ final class Raw(val policy: Array[Float], val pass: Float, val value: Array[Floa
 final class Forward(model: Model):
   def run(n: Int, spatial: Array[Float], global: Array[Float]): Raw =
     val area = n * n
+    // a convolution as a product: the input unrolled (im2col: a row for each weight's (y, x, in), a column for each
+    // point, zero beyond the edge), then out[oc][point] += w[row][oc] * col[row][point] — the inner loop the whole
+    // board long
     def conv(c: Conv, in: Array[Float]): Array[Float] =
       val out = new Array[Float](c.out * area)
       val py = (c.ky - 1) / 2; val px = (c.kx - 1) / 2
-      var ic = 0
-      while ic < c.in do
+      val rows = c.ky * c.kx * c.in
+      val col = if c.ky == 1 && c.kx == 1 then in else
+        val m = new Array[Float](rows * area)
         var dy = 0
         while dy < c.ky do
           var dx = 0
           while dx < c.kx do
-            val base = ((dy * c.kx + dx) * c.in + ic) * c.out
-            val y0 = math.max(0, py - dy); val y1 = math.min(n, n + py - dy)
-            val x0 = math.max(0, px - dx); val x1 = math.min(n, n + px - dx)
-            var oc = 0
-            while oc < c.out do
-              val wv = c.w(base + oc)
-              if wv != 0f then
-                val ob = oc * area; val ib = ic * area
-                var y = y0
-                while y < y1 do
-                  val orow = ob + y * n; val irow = ib + (y + dy - py) * n + (dx - px)
-                  var x = x0
-                  while x < x1 do { out(orow + x) += wv * in(irow + x); x += 1 }
-                  y += 1
-              oc += 1
+            var ic = 0
+            while ic < c.in do
+              val row = ((dy * c.kx + dx) * c.in + ic) * area; val ib = ic * area
+              var y = 0
+              while y < n do
+                val sy = y + dy - py
+                if sy >= 0 && sy < n then
+                  var x = 0
+                  while x < n do
+                    val sx = x + dx - px
+                    if sx >= 0 && sx < n then m(row + y * n + x) = in(ib + sy * n + sx)
+                    x += 1
+                y += 1
+              ic += 1
             dx += 1
           dy += 1
-        ic += 1
+        m
+      var r = 0
+      while r < rows do
+        val cb = r * area; val wb = r * c.out
+        var oc = 0
+        while oc < c.out do
+          val wv = c.w(wb + oc); val ob = oc * area
+          var p = 0
+          while p < area do { out(ob + p) += wv * col(cb + p); p += 1 }
+          oc += 1
+        r += 1
       out
     def normed(b: Norm, in: Array[Float]): Array[Float] =
       val out = new Array[Float](in.length)

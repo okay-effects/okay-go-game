@@ -35,7 +35,7 @@ lazy val net = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Full).i
 
 /** THE PAGE: okay-ui's screens on okay-faces' Laminar face */
 lazy val app = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Pure).in(file("app"))
-  .dependsOn(core)
+  .dependsOn(core, net)
   .settings(name := "okay-go-game", publish / skip := true,
     libraryDependencies ++= Seq("io.github.okay-effects" %%% "okay-ui" % okayUi, munit.value))
   .jsSettings(

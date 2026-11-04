@@ -140,3 +140,13 @@ The plan, in order; each step checked before the next:
    build time; the CPU reference where WebGPU is missing.
 4. A network of our own, trained on the Mac by mlx-scala (supervised on games the search plays), in the same format.
 5. okay-inlay: the legal-move mask (and liberties) as weights of the network — no illegal move without outside code.
+
+Step 1, done: the CPU reference (`net`: `Model.parse`, `Forward`, `Inputs`, `Binary`) equals KataGo (Homebrew 1.18.2,
+FP32, `kata-raw-nn 0`) on 15 positions of 9 × 9, 13 × 13 and 19 × 19 (0 to 180 moves) to 1.7e-6 (`NetSuite`; the
+fixture by `Truth`). 2 990 416 parameters. On the JVM, one thread, im2col: ~53 ms an evaluation on 9 × 9, ~112 ms on
+19 × 19.
+
+Step 2, done: `Puct` (priors from the policy, the value at the leaves, c = 1.1, a first-play reduction of 0.2, a
+finished game scored by the rules, the most visited move — among equals the network's own choice). With 30
+evaluations a move it beat the present MCTS at 17 500 playouts (its page budget) in 8 of 8 games on 9 × 9, margins
+13.5 to 44.5 (JVM, CPU).
