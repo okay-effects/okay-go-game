@@ -35,6 +35,19 @@ lazy val net = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Full).i
   .jvmSettings(run / fork := true, run / baseDirectory := (ThisBuild / baseDirectory).value,
     run / javaOptions += "-Xmx4g")
 
+/** THE NETWORK OF OUR OWN, TRAINED ON THE MAC: the v8 network in MLX (mlx-scala, its native libraries built by its
+ * native-lib/build.sh; `-Dokm.lib` their path), a student distilled from KataGo's b10c128 (specs/go-game.md) */
+val okmLib = sys.env.getOrElse("OKM_LIB",
+  sys.props("user.home") + "/work/my/mlx-scala/native-lib/out/lib/libokm.dylib")
+lazy val train = (project in file("train"))
+  .dependsOn(net.jvm)
+  .settings(name := "okay-go-game-train", publish / skip := true,
+    resolvers += "mlx-scala" at "https://sergey-scherbina.github.io/mlx-scala/maven",
+    libraryDependencies ++= Seq("io.github.sergey-scherbina" %% "mlx-scala" % "0.1.0", munit.value),
+    fork := true, run / baseDirectory := (ThisBuild / baseDirectory).value,
+    Test / baseDirectory := (ThisBuild / baseDirectory).value,
+    javaOptions ++= Seq("--enable-native-access=ALL-UNNAMED", s"-Dokm.lib=$okmLib", "-Xmx12g", "-Xss16m"))
+
 /** THE PAGE: okay-ui's screens on okay-faces' Laminar face */
 lazy val app = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Pure).in(file("app"))
   .dependsOn(core, net)
@@ -77,6 +90,6 @@ lazy val server = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Full
     Compile / mainClass := Some("okay.go.server.Serve"),
     run / fork := true, run / baseDirectory := (ThisBuild / baseDirectory).value)
 
-lazy val root = (project in file(".")).aggregate(core.jvm, core.js, net.jvm, net.js, app.jvm, app.js, server.jvm,
+lazy val root = (project in file(".")).aggregate(train, core.jvm, core.js, net.jvm, net.js, app.jvm, app.js, server.jvm,
     server.js)
   .settings(publish / skip := true)
