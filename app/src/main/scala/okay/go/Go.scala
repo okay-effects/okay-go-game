@@ -9,19 +9,28 @@ import okay.go.Rules.{Black, Position, White}
  * the model's logits go through the same mask: what it wanted, and what it was allowed, are shown.
  */
 object Go:
-  type App[X] = (Ui + Model)[X]
+  type App[X] = (Ui + Model + Remote + Place)[X]
 
   enum Mode:
     case Two
     case Against(person: Int)
 
-  def main[R[_]: Has[Ui]: Has[Model]]: Unit ! R =
-    menu[Int, R]("Go 9 × 9", "Two players" -> 1, "Play Black against the model" -> 2,
+  /** the page opened by a game's link goes to that game; else the menu */
+  def main[R[_]: Has[Ui]: Has[Model]: Has[Remote]: Has[Place]]: Unit ! R =
+    perform[Place](Place.Read()).flatMap { ps =>
+      ps.get("g").filter(Room.wellFormed) match
+        case Some(g) => Online.join[R](g, ps.get("k").filter(Room.wellFormed), None).andThen(defer(menuOf[R]))
+        case None => menuOf[R]
+    }
+
+  def menuOf[R[_]: Has[Ui]: Has[Model]: Has[Remote]: Has[Place]]: Unit ! R =
+    menu[Int, R]("Go 9 × 9", "Two players" -> 1, "Play a friend online" -> 5, "Play Black against the model" -> 2,
       "Play White against the model" -> 3, "Rules" -> 4).flatMap {
-      case 1 => turn[R](Mode.Two, Rules.start, Nil).andThen(defer(main[R]))
-      case 2 => turn[R](Mode.Against(Black), Rules.start, Nil).andThen(defer(main[R]))
-      case 3 => modelMoves[R](Mode.Against(White), Rules.start).andThen(defer(main[R]))
-      case _ => inform[R]("Rules", rules).andThen(defer(main[R]))
+      case 5 => Online.start[R].andThen(defer(menuOf[R]))
+      case 1 => turn[R](Mode.Two, Rules.start, Nil).andThen(defer(menuOf[R]))
+      case 2 => turn[R](Mode.Against(Black), Rules.start, Nil).andThen(defer(menuOf[R]))
+      case 3 => modelMoves[R](Mode.Against(White), Rules.start).andThen(defer(menuOf[R]))
+      case _ => inform[R]("Rules", rules).andThen(defer(menuOf[R]))
     }
 
   val rules: String = "Black and White take turns to put a stone on an empty point; Black begins. A group of stones " +

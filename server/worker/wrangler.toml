@@ -1,0 +1,13 @@
+# okay-go-game's server: `npx wrangler dev` here after `sbt serverJS/worker`; `npx wrangler deploy` to publish
+name = "okay-go-game"
+main = "entry.js"
+compatibility_date = "2026-10-01"
+
+# a game an object, its players and watchers its WebSockets (hibernation), its state in the object's SQLite
+[[durable_objects.bindings]]
+name = "GAMES"
+class_name = "Game"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Game"]

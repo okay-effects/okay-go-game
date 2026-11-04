@@ -11,3 +11,7 @@ code follows it, a change of design is a change of the spec first.
 - Published: `scripts/publish.sh` (the gh-pages branch) → https://okay-effects.github.io/okay-go-game/.
 - Scripts are scala-cli, never Python. Scala 3.3, lines at most 120 wide, English in code and docs.
 - Commits: plain messages, no attribution trailers.
+- Three modules: `core` (the rules and a game's room, shared), `app` (the page), `server` (the games' server:
+  `Games` on okay-serverless — Cloudflare from `server/js`, okay-serverless' host from `server/jvm`, the same code).
+  The server is deployed by `scripts/deploy.sh` (after `npx wrangler login`); an online change is checked by
+  `scripts/e2e-online.scala` on `wrangler dev` (server/worker) before it is deployed.

@@ -46,4 +46,4 @@ object InTheBrowser:
       |""".stripMargin)
 
   def main(args: Array[String]): Unit =
-    Page.mount(OnFaces.program(steps(Model.toy()(Go.main[App]))), skin)
+    Page.mount(OnFaces.program(steps(PageAddress()(Sockets(Sockets.server)(Model.toy()(Go.main[App]))))), skin)

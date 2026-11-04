@@ -1,0 +1,5 @@
+{
+  "name": "okay-go-game-worker",
+  "private": true,
+  "devDependencies": { "wrangler": "^4.155.0" }
+}

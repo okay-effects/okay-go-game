@@ -7,6 +7,8 @@ import okay.go.Go.App
 /** GO: the rules (captures, suicide, ko, the score by area), and the whole application by its buttons — two players,
  * and a person against the toy model, whose every move is legal */
 class GoSuite extends munit.FunSuite:
+  /** the application with its world: the model given, no game far apart, the page's address empty */
+  def app(toy: Handles[Model]): Step[Unit] = steps(Place.fixed()(Tables().client()(toy(Go.main[App]))))
   def p(name: String): Int = points.find(Rules.name(_) == name).get
   /** a position from moves by name, "pass" a pass */
   def moves(ms: String*): Position = ms.foldLeft(start)((pos, m) => if m == "pass" then pass(pos) else play(pos, p(m)))
@@ -50,7 +52,7 @@ class GoSuite extends munit.FunSuite:
   }
 
   test("two players by buttons: stones placed, a taken point has no button, two passes end the game") {
-    def play2(acts: Act*) = Play(steps(Model.toy(new scala.util.Random(1))(Go.main[App])), acts*)
+    def play2(acts: Act*) = Play(app(Model.toy(new scala.util.Random(1))), acts*)
     val p1 = play2(Act.press("Two players"), Act.press("E5"))
     assert(p1.at.get.buttons.forall(_.label != "E5"), "E5 taken: no button")
     assert(p1.at.get.parts.collect { case Part.Text(s) => s }.head.startsWith("White to play"))
@@ -62,7 +64,7 @@ class GoSuite extends munit.FunSuite:
 
   test("against the toy: it answers each move with a legal one, says what it wanted, and the game can end") {
     val toy = Model.toy(new scala.util.Random(5))
-    def run(acts: Act*) = Play(steps(toy(Go.main[App])), acts*)
+    def run(acts: Act*) = Play(app(toy), acts*)
     val p1 = run(Act.press("Play Black against the model"), Act.press("E5"))
     val said = p1.at.get.parts.collect { case Part.Details(rows) => rows.map((k, v) => k -> v.text) }.head
     assertEquals(said.map(_._1), List("The model wanted", "The model played"), said.toString)
@@ -79,6 +81,6 @@ class GoSuite extends munit.FunSuite:
   }
 
   test("as White against the model: the model moves first") {
-    val p1 = Play(steps(Model.toy(new scala.util.Random(2))(Go.main[App])), Act.press("Play White against the model"))
+    val p1 = Play(app(Model.toy(new scala.util.Random(2))), Act.press("Play White against the model"))
     assert(p1.at.get.parts.collect { case Part.Text(s) => s }.head.startsWith("You play White · White to play"))
   }
