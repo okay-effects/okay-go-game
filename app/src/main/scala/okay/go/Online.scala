@@ -16,7 +16,10 @@ final case class Seen(n: Int, view: View)
  * acts. Where the game is — a server's object over a socket, or a test's memory — is a handler's */
 enum Remote[X]:
   case Create(colour: Int, size: Int) extends Remote[Invite]
-  case Join(game: String, key: Option[String], make: Option[Invite]) extends Remote[Unit]
+  /** sat at a game with `key` (none: watching), made if new (`make`); `also` the other seat's key when this page
+   * holds both (the model's, or two at one screen): both seats here, as watchers see it */
+  case Join(game: String, key: Option[String], make: Option[Invite], also: Option[String] = None)
+      extends Remote[Unit]
   /** what the server says after the `after`th thing it said: answered at once when that has come already */
   case Updates(after: Int) extends Remote[Events[Seen]]
   /** an action — for the seat of `key` when given (a page holding both seats), else this socket's own; made `at` a
@@ -71,7 +74,7 @@ final class Tables:
     def apply[R[_], Rest[_], A](p: A ! R)(using Split[Remote, R, Rest]): A ! Rest =
       handle(p, Handler.Tail[Remote, Rest, A, A](a => pure(a), [X] => (asked: Remote[X]) => asked match
         case Remote.Create(colour, size) => Invite(fresh(), colour, fresh(), fresh(), size)
-        case Remote.Join(id, key, make) =>
+        case Remote.Join(id, key, make, _) =>
           if !games.contains(id) then make.filter(i => key.contains(i.mine)).foreach(i =>
             games += id -> Room.Game(i.size, i.black, i.white, Vector.empty, None))
           games.get(id).foreach { g => game = Some(id); seat = g.seat(key.getOrElse("")); tell(id) }

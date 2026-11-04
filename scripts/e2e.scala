@@ -65,6 +65,16 @@ def run(page: String, pictures: String): Unit =
   p.waitForFunction("() => document.body.textContent.includes('A move was made on another device.') && " +
     s"document.querySelectorAll(\"$both\").length == ${before + 2}")
   println(s"in step: $free played in the other tab, and the reply, seen here")
+  // shown to a watcher: the watchers' link in a third tab — the same stones, no point to press, no Pass
+  val g = "#g=([0-9a-f]{32})".r.findFirstMatchIn(p.url()).get.group(1)
+  val r = p.context().newPage(); r.setDefaultTimeout(60000)
+  r.navigate(p.url().takeWhile(_ != '#') + s"#g=$g")
+  r.waitForFunction("() => document.body.textContent.includes('You are watching')")
+  val seen = r.locator(both).count()
+  if seen != before + 2 then fail(s"the watcher sees $seen stones, not ${before + 2}")
+  if r.getByRole(AriaRole.LINK).count() > 0 && r.locator("text=Pass").count() > 0 then fail("a watcher can play")
+  println(s"watched: $seen stones, nothing to press")
+  r.close()
   q.close()
   // the full board against the model: its replies timed, how many games it played out
   button("Menu").click(); button("Play Black against the model").click()

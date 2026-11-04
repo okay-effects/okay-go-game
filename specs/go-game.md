@@ -213,3 +213,7 @@ first") — a move meant for one position never lands in another. The model's tu
 thought there: this page shows "The model is thinking on the other device…" and waits, or thinks itself ("Think
 here", that device closed). Checked: OnlineSuite (two devices, a race, a resignation), GamesSuite (a stale move),
 e2e (a move in one tab seen in the other, the model's reply with it).
+SHOWN TO A WATCHER: under a kept game, "Show to a watcher": its watchers' link (#g=… alone, no key) and a button to
+copy it; a page opened by it watches as a game far apart is watched — the game as it is and every move after, no
+button to play, not on that browser's list. A page holding both seats joins with the other's key too (`also`): the
+server tags its socket with both, and watchers see both players here (the model's seat not "away").

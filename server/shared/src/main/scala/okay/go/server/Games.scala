@@ -65,9 +65,11 @@ object Games:
             case _ => pure(None)
         made.flatMap {
           case None => pure(Response.notFound("no such game"))
-          case Some(g) => touch(name).andThen(Sockets.accept[InActor](request, Room.seatName(g.seat(key)))).flatMap {
-            r => Sockets.later[InActor](tell(name, None)).as(r)
-          }
+          // its tags: its seat, and the other one's too when it brings that key as well (a page holding both)
+          case Some(g) =>
+            val also = request.param("also").map(g.seat).filter(s => s != Room.Watch && s != g.seat(key))
+            touch(name).andThen(Sockets.accept[InActor](request, (Room.seatName(g.seat(key)) :: also.toList
+              .map(Room.seatName))*)).flatMap(r => Sockets.later[InActor](tell(name, None)).as(r))
         }
       }
 

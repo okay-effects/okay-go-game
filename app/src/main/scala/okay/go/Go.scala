@@ -80,7 +80,7 @@ object Go:
     val own = mode match { case Mode.Against(c) => c; case Mode.Two => Black }
     perform[Remote](Remote.Create(own, size)).flatMap { i =>
       val keys = Keys(i.game, Map(Black -> i.black, White -> i.white))
-      perform[Remote](Remote.Join(i.game, Some(keys.of(own)), Some(i)))
+      perform[Remote](Remote.Join(i.game, Some(keys.of(own)), Some(i), Some(keys.of(Rules.other(own)))))
         .andThen(perform[Place](Place.Write(keys.link(mode))))
         .andThen(go[R](Table(mode, Some(keys)), Rules.startOf(size), Nil))
     }
@@ -89,7 +89,7 @@ object Go:
    * as two people, or against the model (the person the socket's seat) */
   def resume[R[_]: Has[Ui]: Has[Model]: Has[Remote]: Has[Place]: Has[Clipboard]: Has[Settings]](g: String, k: String,
       other: String, model: Boolean): Unit ! R =
-    perform[Remote](Remote.Join(g, Some(k), None)).andThen(perform[Place](Place.Write(
+    perform[Remote](Remote.Join(g, Some(k), None, Some(other))).andThen(perform[Place](Place.Write(
       Map("g" -> g, "k" -> k, (if model then "m" else "o") -> other)))).andThen(
     perform[Remote](Remote.Updates(0))).flatMap { updates =>
       show(Screen[Option[Seen]]("Go")(Part.info("Opening the game…"))(Button("Menu")(None))
@@ -137,7 +137,7 @@ object Go:
   enum Act:
     case Stone(p: Int)
     case Update(s: Seen)
-    case Pass, Resign, Menu, Copy, ThinkHere
+    case Pass, Resign, Menu, Copy, CopyWatching, ThinkHere
 
   private def status(pos: Position): String =
     s"${Board.word(pos.toPlay)} to play · move ${pos.moves + 1} · captured by Black ${pos.captured(Black)}, " +
@@ -148,11 +148,16 @@ object Go:
     case Mode.Against(c) => Part.text(s"You play ${Board.word(c)} · " + status(pos))
 
   /** the game's own link, to go on with it on another device: a QR code for a phone's camera, and the link */
+  /** the watchers' link: the game alone, no key — a page that opens it sees, and cannot play */
+  private def watching(base: String, keys: Keys): String = s"$base#g=${keys.game}"
+
   private def elsewhere[R[_]: Has[Place]](t: Table): List[Part] ! R = t.keys match
     case None => pure(Nil)
     case Some(keys) => perform[Place](Place.Base()).map { base =>
       val link = s"$base#${Place.print(keys.link(t.mode))}"
-      List(Part.section("Continue on another device")(Part.qr(link, "this game's link"), Part.text(link)))
+      List(Part.section("Continue on another device")(Part.qr(link, "this game's link"), Part.text(link)),
+        Part.section("Show to a watcher")(Part.text("They see the game as it is and every move after, and cannot " +
+          "play:"), Part.text(watching(base, keys))))
     }
 
   /** what the server says, heard while waiting: none for a game kept nowhere */
@@ -212,13 +217,17 @@ object Go:
       val screen = Screen[Act]("Go")((Board(pos, legal.toSet) +: heading(t.mode, pos) +: (said ++ link))*)(
         (points ++ Seq(Button("Pass")(Act.Pass), Button("Resign", Style.Danger)(Act.Resign),
           Button("Menu")(Act.Menu)) ++ (if link.isEmpty then Nil else Seq(Button("Copy this game's link")(
-          Act.Copy))))*)
+          Act.Copy), Button("Copy the watchers' link")(Act.CopyWatching))))*)
       show(heard.fold(screen)(h => screen.until(h.map(Act.Update(_))))).flatMap {
         case Act.Update(s) => heardFrom[R](t, pos, said, s)(t2 => turn[R](t2, pos, said))
         case Act.Menu | Act.ThinkHere => leave[R]
         case Act.Copy => elsewhereText[R](t).flatMap(l => copy[R](l)).flatMap(done => defer(turn[R](t, pos,
           List(if done then Part.info("This game's link is copied: open it on the other device.")
             else Part.warning("This browser does not let the page copy: copy the link from the text.")))))
+        case Act.CopyWatching => perform[Place](Place.Base()).flatMap(base => copy[R](t.keys.fold("")(k =>
+          watching(base, k)))).flatMap(done => defer(turn[R](t, pos, List(if done then Part.info(
+          "The watchers' link is copied: send it to whoever should watch.") else Part.warning(
+          "This browser does not let the page copy: copy the watchers' link from the text.")))))
         case Act.Resign => kept[R](t, pos.toPlay, Action.Resign, pos, resigned = true)
           .andThen(end[R](t, pos, Some(pos.toPlay)))
         case Act.Pass =>

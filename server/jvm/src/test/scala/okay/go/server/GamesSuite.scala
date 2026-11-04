@@ -63,6 +63,17 @@ class GamesSuite extends munit.FunSuite:
     assertEquals(last(again).moves, Vector(e5, d4, e5 + 2))
   }
 
+  test("a page holding both seats says so (also=…): a watcher sees both players here, its seat the first key's") {
+    val c = cloud()
+    val b = socket(c, s"key=$black&also=$white&black=$black&white=$white")
+    val v = socket(c, "")
+    assertEquals(last(b).seat, Rules.Black)
+    assertEquals((last(v).black, last(v).white), (true, true))
+    // a key that is no seat's, or the socket's own again, adds nothing
+    val x = socket(c, s"key=$white&also=$other")
+    assertEquals(last(x).seat, Rules.White)
+  }
+
   test("a move told to everyone; out of turn, a watcher's, or illegal: refused to that socket with the reason") {
     val c = cloud()
     val b = socket(c, s"key=$black&black=$black&white=$white"); val w = socket(c, s"key=$white"); val v = socket(c, "")

@@ -197,3 +197,24 @@ class OnlineSuite extends munit.FunSuite:
     b = heardGame(b, cb)
     assertEquals(screen(b).title, "Game over")
   }
+
+  test("a kept game shown to a watcher: its link sees the game and every move after, and plays nothing") {
+    val tables = Tables()
+    val here = Place.fixed()
+    var a = press(press(device(tables, here, scala.collection.mutable.Map.empty)._1, "Play Black against the model"),
+      "9 × 9 — a quick game")
+    a = press(a, "E5")
+    val g = here.now("g")
+    a = press(a, "Copy the watchers' link")
+    assertEquals(copied.last, s"https://example.org/go/#g=$g")
+    assert(texts(a).contains(copied.last), "the watchers' link shown")
+    val watched = scala.collection.mutable.Map.empty[String, String]
+    val (w0, cw) = device(tables, Place.fixed(Place.parse(copied.last.dropWhile(_ != '#'))), watched)
+    var w = hear(w0, cw)
+    assert(texts(w).exists(_.startsWith("You are watching · Black to play · move 3")), texts(w).toString)
+    assertEquals(screen(w).buttons.map(_.label), List("Copy the watchers' link", "Leave"))
+    a = press(a, "D4") // and the model's reply: the watcher sees both
+    w = hear(w, cw)
+    assert(texts(w).exists(_.startsWith("You are watching · Black to play · move 5")), texts(w).toString)
+    assertEquals(watched.getOrElse("games", ""), "", "a watched game is not on the watcher's list")
+  }
