@@ -37,6 +37,8 @@ object Distill:
 
   def run(plan: Plan): Unit =
     Mlx.init()
+    // MEMORY KEPT SMALL (the Mac shared): MLX keeps at most 1 GB of freed buffers for reuse (its default: all it may)
+    Mlx.setCacheLimit(1L << 30)
     val log = Logger()
     val keep = new Scope
     val teacherModel = Binary.read(Files.readAllBytes(Path.of("nets/b10c128.bin")))
@@ -56,7 +58,7 @@ object Distill:
       .filter(_._1).map(_._2).mkString(", ")}), ${init.map(_.data.length.toLong).sum}%,d weights; " +
       s"the teacher: ${teacherModel.parameters} weights; $plan")
 
-    val replays = sizes.map((s, _, _) => s -> Replay(s, if s == 9 then 400000 else if s == 13 then 150000 else 60000))
+    val replays = sizes.map((s, _, _) => s -> Replay(s, if s == 9 then 200000 else if s == 13 then 80000 else 30000))
       .toMap
     val held = sizes.map((s, _, _) => s -> Replay(s, 2048)).toMap
     val plays = sizes.map((s, games, _) => s -> SelfPlay(teacher, teacherWeights, s, games, replays(s), s)).toMap
@@ -166,7 +168,9 @@ object Distill:
             val mins = (System.nanoTime() - began) / 6e10
             log(f"step $step lr ${lr(step)}%.2e train loss ${running / counted}%.3f; held out: ${evaluate()}; " +
               f"positions ${replays.values.map(_.added).sum}%,d, games ${plays.values.map(_.finished).sum}%,d; " +
-              f"$mins%.1f min (playing ${gen / 60}%.1f, learning ${learn / 60}%.1f)")
+              f"$mins%.1f min (playing ${gen / 60}%.1f, learning ${learn / 60}%.1f); " +
+              f"MLX ${Mlx.activeMemory / 1e9}%.1f GB, cached ${Mlx.cacheMemory / 1e9}%.1f GB, peak " +
+              f"${Mlx.peakMemory / 1e9}%.1f GB")
             running = 0; counted = 0
             save()
         learn += (System.nanoTime() - t1) / 1e9

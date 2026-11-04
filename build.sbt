@@ -46,7 +46,7 @@ lazy val train = (project in file("train"))
     libraryDependencies ++= Seq("io.github.sergey-scherbina" %% "mlx-scala" % "0.1.0", munit.value),
     fork := true, run / baseDirectory := (ThisBuild / baseDirectory).value,
     Test / baseDirectory := (ThisBuild / baseDirectory).value,
-    javaOptions ++= Seq("--enable-native-access=ALL-UNNAMED", s"-Dokm.lib=$okmLib", "-Xmx12g", "-Xss16m"))
+    javaOptions ++= Seq("--enable-native-access=ALL-UNNAMED", s"-Dokm.lib=$okmLib", "-Xmx5g", "-Xss16m"))
 
 /** THE PAGE: okay-ui's screens on okay-faces' Laminar face */
 lazy val app = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Pure).in(file("app"))
