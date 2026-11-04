@@ -28,8 +28,8 @@ object Selftest:
     (for
       (model, _) <- GpuNet.load(s"net/$net.bin")
       gpu <- GpuNet.create(model)
-      _ = say(s"model $net: ${model.parameters} parameters; WebGPU: ${gpu.isDefined}")
-      _ <- gpu.fold(Future.unit) { net =>
+      _ = say(s"model $net: ${model.parameters} parameters; WebGPU: ${gpu.fold(identity, _ => "yes")}")
+      _ <- gpu.fold(_ => Future.unit, net =>
         val cpu = Forward(model)
         Seq(9, 13, 19).foldLeft(Future.unit) { (prev, size) => prev.flatMap { _ =>
           val positions = (0 until 8).toVector.map(k => game(size, k * size * size / 16, 100 + k))
@@ -50,5 +50,5 @@ object Selftest:
             say(f"$size x $size: largest difference $worst%.2e; GPU a batch of 8 in $gpuMs%.1f ms; CPU $cpuMs%.1f ms " +
               "a position")
         }}
-      }
+      )
     yield say("selftest: done")).failed.foreach(e => say(s"selftest: failed: $e"))

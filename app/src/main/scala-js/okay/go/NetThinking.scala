@@ -19,7 +19,7 @@ final class Engine(val name: String, val gpu: GpuNet, val model: Net, val bytes:
  * of. Without WebGPU, the search that plays games out (`Searcher`), as before. Each thought says how the model works
  * (`Thought.about`): the model, the device, the memory, and the move's numbers — where its time went.
  */
-final class NetThinking(net: () => Future[Option[Engine]], random: scala.util.Random = new scala.util.Random()):
+final class NetThinking(net: () => Future[Either[String, Engine]], random: scala.util.Random = new scala.util.Random()):
   private def millis(size: Int): Double = size match
     case 9 => 1500
     case 13 => 2500
@@ -73,7 +73,7 @@ final class NetThinking(net: () => Future[Option[Engine]], random: scala.util.Ra
             def now = dom.window.performance.now()
             def spent = now - began
             net().onComplete {
-              case Success(Some(e)) =>
+              case Success(Right(e)) =>
                 val s = Puct(pos, _ => throw IllegalStateException("judged in batches"))
                 val c = Clock()
                 // A PIPELINE: while the GPU reads one batch, the CPU gathers and prepares the next (its leaves chosen
@@ -110,8 +110,12 @@ final class NetThinking(net: () => Future[Option[Engine]], random: scala.util.Ra
                     // the GPU busy: the next batch made meanwhile
                     if next.isEmpty && spent < millis(pos.size) then next = Some(prepare())
                 launch(prepare())
-              case _ =>
+              case other =>
                 // no WebGPU (or the network not loaded): the search that plays games out, between frames
+                val why = other match
+                  case Success(Left(reason)) => reason
+                  case Failure(e) => s"the network did not load: ${e.getMessage}"
+                  case _ => "no network"
                 val budget = Model.budget(pos.size)
                 val s = Searcher(pos, random)
                 def part(): Unit = if !stopped then
@@ -122,7 +126,7 @@ final class NetThinking(net: () => Future[Option[Engine]], random: scala.util.Ra
                     val t = Model.answer(pos, s)
                     answer(Right(t.copy(about = List(
                       "Model" -> "Monte-Carlo tree search with RAVE, heavy playouts and prior knowledge — no network",
-                      "Runs on" -> "the CPU: this browser has no WebGPU (or the network did not load)",
+                      "Runs on" -> s"the CPU — $why",
                       "This move" -> f"${s.playouts} games played out in ${spent / 1000}%.1f s"))))
                   else dom.window.setTimeout(() => part(), 0)
                 part()
@@ -134,12 +138,13 @@ object NetThinking:
   /** the network the page plays with: KataGo's b10c128, or ours with `?net=own` */
   def chosen: String = if dom.window.location.search.contains("net=own") then "own" else "b10c128"
 
-  /** the network of the page, loaded and put on the GPU once, at the first call */
-  def network(name: String): () => Future[Option[Engine]] =
-    lazy val loaded: Future[Option[Engine]] =
+  /** the network of the page, loaded and put on the GPU once, at the first call — or why it is not */
+  def network(name: String): () => Future[Either[String, Engine]] =
+    lazy val loaded: Future[Either[String, Engine]] =
       val t0 = dom.window.performance.now()
       (for
         (model, bytes) <- GpuNet.load(s"net/$name.bin")
         gpu <- GpuNet.create(model)
-      yield gpu.map(g => Engine(name, g, model, bytes, dom.window.performance.now() - t0))).recover { case _ => None }
+      yield gpu.map(g => Engine(name, g, model, bytes, dom.window.performance.now() - t0)))
+        .recover { case e => Left(s"the network did not load: ${e.getMessage}") }
     () => loaded

@@ -147,11 +147,13 @@ final class GpuNet private (device: js.Dynamic, model: Model, val adapter: Strin
 
 object GpuNet:
   /** the network on the page's GPU, if it has WebGPU */
-  def create(model: Model)(using ExecutionContext): Future[Option[GpuNet]] =
+  def create(model: Model)(using ExecutionContext): Future[Either[String, GpuNet]] =
     val gpu = g.navigator.gpu
-    if js.isUndefined(gpu) || gpu == null then Future.successful(None)
+    if js.isUndefined(gpu) || gpu == null then
+      Future.successful(Left("this browser has no WebGPU (navigator.gpu is missing" +
+        (if g.isSecureContext.asInstanceOf[Boolean] then ")" else "; the page is not a secure context)")))
     else gpu.requestAdapter().asInstanceOf[js.Promise[js.Dynamic]].toFuture.flatMap { adapter =>
-      if adapter == null then Future.successful(None)
+      if adapter == null then Future.successful(Left("WebGPU is here but gave no GPU adapter"))
       else
         val limits = adapter.limits
         val info = adapter.info
@@ -162,8 +164,8 @@ object GpuNet:
         adapter.requestDevice(literal(requiredLimits = literal(
           maxStorageBufferBindingSize = limits.maxStorageBufferBindingSize,
           maxBufferSize = limits.maxBufferSize))).asInstanceOf[js.Promise[js.Dynamic]].toFuture
-          .map(d => Some(GpuNet(d, model, if name.isEmpty then "a GPU" else name, f16)))
-    }
+          .map(d => Right(GpuNet(d, model, if name.isEmpty then "a GPU" else name, f16)))
+    }.recover { case e => Left(s"WebGPU failed: ${e.getMessage}") }
 
   /** the model's bytes fetched from `url` and read: the model, and how many bytes it came in */
   def load(url: String)(using ExecutionContext): Future[(Model, Int)] =
