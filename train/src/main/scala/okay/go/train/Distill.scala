@@ -14,12 +14,13 @@ import java.nio.file.{Files, Path, StandardCopyOption, StandardOpenOption}
  * `reuse` times). Every `every` steps: the loss and the policy's agreement (argmax) with the teacher on held-out
  * positions, and the student written to nets/own.bin (by `Binary`: the page's format).
  *
- * `sbt "train/runMain okay.go.train.Distill [steps] [blocks] [channels]"`; `--resume` starts from nets/own.bin.
+ * `sbt "train/runMain okay.go.train.Distill [steps] [blocks] [channels]"`; `--resume=<step>` goes on from nets/own.bin
+ * at that step of the schedule (the log says the last step saved).
  */
 object Distill:
   final case class Plan(steps: Int = 60000, blocks: Int = 6, channels: Int = 64, pooled: Int = 16, head: Int = 32,
       valueHidden: Int = 64, lr: Float = 1e-3f, warmup: Int = 1000, decay: Float = 1e-4f, reuse: Int = 4,
-      resume: Boolean = false, out: String = "nets/own.bin")
+      resume: Boolean = false, start: Int = 0, out: String = "nets/own.bin")
 
   /** the sizes played and learned: games at once, a batch */
   val sizes = Vector((9, 256, 256), (13, 128, 128), (19, 64, 64))
@@ -28,7 +29,8 @@ object Distill:
     val nums = args.filterNot(_.startsWith("--")).map(_.toInt)
     val base = Plan()
     val plan = base.copy(steps = nums.lift(0).getOrElse(base.steps), blocks = nums.lift(1).getOrElse(base.blocks),
-      channels = nums.lift(2).getOrElse(base.channels), resume = args.contains("--resume"))
+      channels = nums.lift(2).getOrElse(base.channels), resume = args.exists(_.startsWith("--resume")),
+      start = args.find(_.startsWith("--resume=")).map(_.drop(9).toInt).getOrElse(0))
     run(plan)
 
   def kindsOf(blocks: Int): Vector[Boolean] = Vector.tabulate(blocks)(i => i % 3 == 2)
@@ -81,7 +83,10 @@ object Distill:
       val total = add(add(lp, lv), add(multiply(lo, scalar(0.5f)), multiply(ls, scalar(0.5f))))
       (total, lp, lv, lo, ls, argmax(logits, 1))
 
-    var step = 0
+    // the step the schedule is at (resumed: where the run stopped); AdamW's own count from 0, its moments new — a
+    // resumed run warms up again over 500 steps
+    var step = plan.start
+    var adam = 0
     def lr(t: Int): Float =
       if t < plan.warmup then plan.lr * (t + 1) / plan.warmup
       else
@@ -94,10 +99,10 @@ object Distill:
       try
         val b = replays(size).batch(batch, random)
         val (value, grads) = valueAndGrad(params, params.indices)(w => losses(w, b, size)._1)
-        step += 1
+        step += 1; adam += 1
         val (b1, b2, eps) = (0.9f, 0.999f, 1e-8f)
-        val c1 = 1f - math.pow(b1, step).toFloat; val c2 = 1f - math.pow(b2, step).toFloat
-        val rate = lr(step)
+        val c1 = 1f - math.pow(b1, adam).toFloat; val c2 = 1f - math.pow(b2, adam).toFloat
+        val rate = if plan.start > 0 then lr(step) * math.min(1f, adam / 500f) else lr(step)
         val next = params.indices.map { k =>
           val g = grads(k)
           val mk = add(multiply(m(k), scalar(b1)), multiply(g, scalar(1 - b1)))
