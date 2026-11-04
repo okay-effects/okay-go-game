@@ -179,3 +179,15 @@ tile of 64 channels x 64 points, 4 x 4 a thread, the sum taken 16 at a time thro
 fly). A batch of 8 on 19 x 19 from 38 to 11.6 ms, 13 x 13 21.6 -> 8.8, 9 x 9 14.4 -> 11.3 (its time now the dispatch
 and the read back), the same results. The batch 32 on 9 x 9, 16 on the larger boards: ~3 200 positions a move on
 9 x 9, ~2 600 on 19 x 19 (were ~1 150 and ~800).
+
+6b, done: THE NETWORK ON WEBGL2 where WebGPU is missing (an iPhone XR stops at iOS 18.7: Safari without
+`navigator.gpu`, and every iPhone browser is WebKit). `GlNet` (net/js), the same interface as `GpuNet` (`OnDevice`):
+a tensor a float texture of four channels a texel (group g of point (x, y) of position b at (g·n + x, b·n + y)), a
+layer a fragment shader drawn into the next texture — a convolution reads through the norm before it and adds a
+channel bias and the residual as it writes; pooling reads through its norm; weights as 4 x 4 blocks, a texel a row.
+Needs EXT_color_buffer_float. A batch runs in a task of its own (a timer's): WebGL reads back at once, and the page
+must keep its turns (Menu while thinking answers after the batch in hand, ~0.35 s). The page picks WebGPU, else
+WebGL2, else the search that plays games out, and says which and why ("Runs on"); `?gl` forces WebGL2. `?selftest`:
+= the CPU reference within 1.7e-5 on three sizes; on Apple M4 Max (ANGLE on Metal) a batch of 8 on 19 x 19 in 20 ms
+(b10c128), 10 ms (ours, 6 x 64). In Chromium, WebGL2, a batch of 8: ~450 positions a move on 9 x 9 with b10c128,
+~950 with ours.

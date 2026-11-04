@@ -2,7 +2,7 @@ package okay.go
 
 import okay.business.scala3.*
 import okay.go.Rules.{Black, Position}
-import okay.go.net.{GpuNet, Inputs, Judgement, Model as Net, Pooling, Puct}
+import okay.go.net.{GlNet, GpuNet, Inputs, Judgement, Model as Net, OnDevice, Pooling, Puct}
 import okay.scala3.std.Async
 import org.scalajs.dom
 import scala.concurrent.Future
@@ -10,7 +10,7 @@ import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.util.{Failure, Success}
 
 /** the network as the page has it: on the GPU, the model it is, how many bytes it came in and how long it took */
-final class Engine(val name: String, val gpu: GpuNet, val model: Net, val bytes: Int, val loadMs: Double)
+final class Engine(val name: String, val gpu: OnDevice, val model: Net, val bytes: Int, val loadMs: Double)
 
 /**
  * THE MODEL IN THE PAGE, A NETWORK: KataGo's g170 b10c128 network on WebGPU (`GpuNet`), searched by PUCT — leaves in
@@ -24,9 +24,10 @@ final class NetThinking(net: () => Future[Either[String, Engine]], random: scala
     case 9 => 1500
     case 13 => 2500
     case _ => 4000
-  /** the batch: 32 on 9 x 9, 16 on the larger boards — with the tiled convolution the best of those tried (8, 16, 32)
-   * in Chromium on Apple Metal 3 */
-  private def batchOf(size: Int): Int = if size <= 9 then 32 else 16
+  /** the batch: on WebGPU 32 on 9 x 9, 16 on the larger boards — with the tiled convolution the best of those tried
+   * (8, 16, 32) in Chromium on Apple Metal 3; on WebGL2 (a phone's, read back at once) 8 */
+  private def batchOf(e: Engine, size: Int): Int =
+    if e.gpu.api != "WebGPU" then 8 else if size <= 9 then 32 else 16
   private def mb(bytes: Long) = f"${bytes / 1048576.0}%.1f MB"
 
   /** what the network's search did for one move */
@@ -43,12 +44,13 @@ final class NetThinking(net: () => Future[Either[String, Engine]], random: scala
         else "KataGo g170 b10c128") + f" — ${m.blocks.size} residual blocks of ${m.conv1.out} channels " +
         f"($pooling with global pooling), ${m.parameters}%,d weights" +
         (if e.name == "own" then "" else "; CC0")),
-      "Runs on" -> s"WebGPU — ${e.gpu.adapter} (kernels in f32${if e.gpu.f16 then "; f16 available" else ""})",
+      "Runs on" -> (s"${e.gpu.api} — ${e.gpu.adapter} (" + (if e.gpu.api == "WebGPU" then "kernels" else "shaders") +
+        s" in f32${if e.gpu.f16 then "; f16 available" else ""})"),
       "Weights" -> f"${mb(e.bytes)}, float32, loaded in ${e.loadMs / 1000}%.1f s",
       "GPU memory" -> (s"${mb(e.gpu.weightBytes + e.gpu.otherBytes)} (weights ${mb(e.gpu.weightBytes)}, " +
         s"activations and the rest ${mb(e.gpu.otherBytes)})"),
       "This move" -> (f"${s.visits} positions read in ${spentMs / 1000}%.1f s — " +
-        f"${s.visits * 1000 / math.max(1.0, spentMs)}%.0f a second; ${c.batches} batches of ${batchOf(pos.size)}"),
+        f"${s.visits * 1000 / math.max(1.0, spentMs)}%.0f a second; ${c.batches} batches of ${batchOf(e, pos.size)}"),
       "A batch" -> (s"the network on the GPU ${per(c.gpuMs)} (sent to read back), its inputs on the CPU " +
         s"${per(c.inputsMs)}, the tree ${per(c.treeMs)} — the CPU's part made while the GPU reads the batch before"),
       "Search" -> (f"PUCT (c 1.1, first-play reduction 0.2), ${millis(pos.size) / 1000}%.1f s a move on " +
@@ -82,7 +84,7 @@ final class NetThinking(net: () => Future[Either[String, Engine]], random: scala
                     val inputs: Vector[(Array[Float], Array[Float])])
                 def prepare(): Ready =
                   val t0 = now
-                  val leaves = s.gather(batchOf(pos.size))
+                  val leaves = s.gather(batchOf(e, pos.size))
                   val t1 = now
                   val scans = leaves.map(l => okay.go.Scan(l.leaf.pos))
                   val inputs = scans.map(Inputs.of)
@@ -136,15 +138,21 @@ final class NetThinking(net: () => Future[Either[String, Engine]], random: scala
 
 object NetThinking:
   /** the network the page plays with: KataGo's b10c128, or ours with `?net=own` */
-  def chosen: String = if dom.window.location.search.contains("net=own") then "own" else "b10c128"
+  def chosen: String = if param("net").contains("own") then "own" else "b10c128"
+
+  private def params = scala.scalajs.js.Dynamic.newInstance(scala.scalajs.js.Dynamic.global.URLSearchParams)(
+    dom.window.location.search)
+  def asked(key: String): Boolean = params.has(key).asInstanceOf[Boolean]
+  def param(key: String): Option[String] = Option(params.get(key).asInstanceOf[String | Null]).map(_.toString)
 
   /** the network of the page, loaded and put on the GPU once, at the first call — or why it is not */
-  def network(name: String): () => Future[Either[String, Engine]] =
+  def network(name: String, forced: Boolean = asked("gl")):
+      () => Future[Either[String, Engine]] =
     lazy val loaded: Future[Either[String, Engine]] =
       val t0 = dom.window.performance.now()
       (for
         (model, bytes) <- GpuNet.load(s"net/$name.bin")
-        gpu <- GpuNet.create(model)
-      yield gpu.map(g => Engine(name, g, model, bytes, dom.window.performance.now() - t0)))
+        gpu <- (if forced then Future.successful(Left("WebGL2 asked for")) else GpuNet.create(model))
+      yield gpu.left.flatMap(why => GlNet.create(model).left.map(more => s"$why; $more")).map(g => Engine(name, g, model, bytes, dom.window.performance.now() - t0)))
         .recover { case e => Left(s"the network did not load: ${e.getMessage}") }
     () => loaded

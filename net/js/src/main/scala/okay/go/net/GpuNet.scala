@@ -11,7 +11,8 @@ import scala.scalajs.js.typedarray.*
  * policy, the pass and the value. The order of the work is `Forward`'s, kernel for step (`Kernels`).
  */
 final class GpuNet private (device: js.Dynamic, model: Model, val adapter: String, val f16: Boolean)(using
-    ExecutionContext):
+    ExecutionContext) extends OnDevice:
+  val api = "WebGPU"
   /** the bytes of the device's buffers: the weights, and the rest (activations, uniforms) */
   var weightBytes = 0L
   var otherBytes = 0L

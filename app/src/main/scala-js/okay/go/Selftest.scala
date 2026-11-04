@@ -1,6 +1,6 @@
 package okay.go
 
-import okay.go.net.{Forward, GpuNet, Inputs, Raw}
+import okay.go.net.{Forward, GlNet, GpuNet, Inputs, Raw}
 import okay.go.Rules.{Position, pass, play, startOf}
 import org.scalajs.dom
 import scala.concurrent.Future
@@ -27,8 +27,10 @@ object Selftest:
     val now = () => dom.window.performance.now()
     (for
       (model, _) <- GpuNet.load(s"net/$net.bin")
-      gpu <- GpuNet.create(model)
-      _ = say(s"model $net: ${model.parameters} parameters; WebGPU: ${gpu.fold(identity, _ => "yes")}")
+      webgpu <- if NetThinking.asked("gl") then Future.successful(Left("WebGL2 asked for")) else GpuNet.create(model)
+      gpu = webgpu.left.flatMap(why => GlNet.create(model).left.map(more => s"$why; $more"))
+      _ = say(s"model $net: ${model.parameters} parameters; " +
+        gpu.fold(why => s"no GPU: $why", d => s"${d.api}: ${d.adapter}"))
       _ <- gpu.fold(_ => Future.unit, net =>
         val cpu = Forward(model)
         Seq(9, 13, 19).foldLeft(Future.unit) { (prev, size) => prev.flatMap { _ =>
@@ -47,7 +49,7 @@ object Selftest:
               val dp = a.policy.indices.map(i => math.abs(a.policy(i) - b.policy(i))).max
               dp.max(math.abs(a.pass - b.pass)).max(a.value.indices.map(i => math.abs(a.value(i) - b.value(i))).max)
             val worst = raws.zip(refs).map(diff).max
-            say(f"$size x $size: largest difference $worst%.2e; GPU a batch of 8 in $gpuMs%.1f ms; CPU $cpuMs%.1f ms " +
+            say(f"$size x $size: largest difference $worst%.2e; ${net.api} a batch of 8 in $gpuMs%.1f ms; CPU $cpuMs%.1f ms " +
               "a position")
         }}
       )
