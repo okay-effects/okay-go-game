@@ -27,9 +27,11 @@ object Room:
     case Move(point: Int)
     case Pass, Resign
 
-  /** an action of `seat`: the game after it, or why not */
-  def act(g: Game, seat: Int, a: Action): Either[String, Game] =
+  /** an action of `seat`: the game after it, or why not — a move or a pass made `at` a number of moves refused when
+   * the game has moved on (another device's came first) */
+  def act(g: Game, seat: Int, a: Action, at: Option[Int] = None): Either[String, Game] =
     if g.over then Left("the game is over")
+    else if a != Action.Resign && at.exists(_ != g.moves.size) then Left("another move came first")
     else if seat == Watch then Left("a watcher cannot play")
     else a match
       case Action.Resign => Right(g.copy(resigned = Some(seat)))
@@ -40,17 +42,21 @@ object Room:
 
   /** an action as said on the socket — with the key of the seat it is for, when the socket's own is not that seat's
    * (a page that holds both: the model's seat, or two people at one screen) */
-  def writeAction(a: Action, key: Option[String] = None): String = Json.print(Json.Obj((a match
-    case Action.Move(p) => Vector("move" -> Json.Num(BigDecimal(p)))
-    case Action.Pass => Vector("pass" -> Json.Bool(true))
-    case Action.Resign => Vector("resign" -> Json.Bool(true))) ++ key.map("key" -> Json.Str(_))))
+  def writeAction(a: Action, key: Option[String] = None, at: Option[Int] = None): String =
+    Json.print(Json.Obj((a match
+      case Action.Move(p) => Vector("move" -> Json.Num(BigDecimal(p)))
+      case Action.Pass => Vector("pass" -> Json.Bool(true))
+      case Action.Resign => Vector("resign" -> Json.Bool(true))) ++ key.map("key" -> Json.Str(_)) ++
+      at.map(n => "at" -> Json.Num(BigDecimal(n)))))
   def readAction(text: String): Option[Action] = readKeyed(text).map(_._1)
-  def readKeyed(text: String): Option[(Action, Option[String])] =
+  /** an action, the key it is for and the number of moves it was made at, as said */
+  def readKeyed(text: String): Option[(Action, Option[String], Option[Int])] =
     Descent.parse(text).toOption.collect { case o: Json.Obj => o }.flatMap { o =>
       o.get("move").collect { case Json.Num(n) if n.isValidInt && n >= 0 => Action.Move(n.toInt) }
         .orElse(o.get("pass").collect { case Json.Bool(true) => Action.Pass })
         .orElse(o.get("resign").collect { case Json.Bool(true) => Action.Resign })
-        .map(_ -> o.get("key").collect { case Json.Str(k) if wellFormed(k) => k })
+        .map(a => (a, o.get("key").collect { case Json.Str(k) if wellFormed(k) => k },
+          o.get("at").collect { case Json.Num(n) if n.isValidInt => n.toInt }))
     }
 
   /** the game as stored */

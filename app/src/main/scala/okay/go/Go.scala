@@ -28,8 +28,9 @@ object Go:
       case Mode.Two => Map("g" -> game, "k" -> of(Black), "o" -> of(White))
       case Mode.Against(c) => Map("g" -> game, "k" -> of(c), "m" -> of(Rules.other(c)))
 
-  /** a game at this screen: how it is played, and its keys when the server keeps it (none: kept nowhere) */
-  final case class Table(mode: Mode, keys: Option[Keys])
+  /** a game at this screen: how it is played, its keys when the server keeps it (none: kept nowhere), and how much
+   * of what the server said this page has heard */
+  final case class Table(mode: Mode, keys: Option[Keys], heard: Int = 0)
 
   /** the page opened by a game's link goes to that game; else the menu */
   def main[R[_]: Has[Ui]: Has[Model]: Has[Remote]: Has[Place]: Has[Clipboard]: Has[Settings]]: Unit ! R =
@@ -99,7 +100,7 @@ object Go:
         case Some(s) =>
           val v = s.view; val seat = v.seat
           val mode = if model then Mode.Against(seat) else Mode.Two
-          val table = Table(mode, Some(Keys(g, Map(seat -> k, Rules.other(seat) -> other))))
+          val table = Table(mode, Some(Keys(g, Map(seat -> k, Rules.other(seat) -> other))), heard = s.n)
           val pos = v.game.position
           if v.game.over then end[R](table, pos, v.resigned) else go[R](table, pos, Nil)
       }
@@ -121,7 +122,9 @@ object Go:
     case None => pure(())
     case Some(keys) =>
       val own = t.mode match { case Mode.Against(c) => c; case Mode.Two => Black }
-      perform[Remote](Remote.Send(a, Some(keys.of(seat)))).andThen(Kept.note[R](Kept(keys.link(t.mode),
+      // made at the moves before it: refused if another device's came first
+      val at = if a == Action.Resign then None else Some(after.moves - 1)
+      perform[Remote](Remote.Send(a, Some(keys.of(seat)), at)).andThen(Kept.note[R](Kept(keys.link(t.mode),
         after.size, after.moves, own), over = resigned || after.over))
 
   val rules: String = "Black and White take turns to put a stone on an empty point; Black begins. A group of stones " +
@@ -133,7 +136,8 @@ object Go:
 
   enum Act:
     case Stone(p: Int)
-    case Pass, Resign, Menu, Copy
+    case Update(s: Seen)
+    case Pass, Resign, Menu, Copy, ThinkHere
 
   private def status(pos: Position): String =
     s"${Board.word(pos.toPlay)} to play · move ${pos.moves + 1} · captured by Black ${pos.captured(Black)}, " +
@@ -151,18 +155,67 @@ object Go:
       List(Part.section("Continue on another device")(Part.qr(link, "this game's link"), Part.text(link)))
     }
 
-  /** a person's turn: a button at each legal point, Pass, Resign, Menu — and the game's link to copy */
+  /** what the server says, heard while waiting: none for a game kept nowhere */
+  private def updates[R[_]: Has[Remote]](t: Table): Option[Events[Seen]] ! R =
+    if t.keys.isEmpty then pure(None) else perform[Remote](Remote.Updates(t.heard)).map(Some(_))
+
+  /** a game's moves as the server keeps them: a point, or -1 a pass */
+  private def movesOf(pos: Position): Vector[Int] = pos.record.map(m => if m == pos.passIndex then -1 else m)
+
+  /**
+   * WHAT THE SERVER SAID, while this page waited at `pos`: its own move come back, or not yet (the server's moves a
+   * beginning of this page's) — it waits on; else the game as the server has it — a move made on another device, or
+   * this page's refused (another device's came first) — taken, and the game goes on from there. The model's turn
+   * so reached is the other device's to think (the one where the person moved): this page waits for it, or thinks
+   * itself when asked ("Think here": that device closed).
+   */
+  private def heardFrom[R[_]: Has[Ui]: Has[Model]: Has[Remote]: Has[Place]: Has[Clipboard]: Has[Settings]](t: Table,
+      pos: Position, said: List[Part], s: Seen)(waitOn: Table => Unit ! R): Unit ! R =
+    val v = s.view; val t2 = t.copy(heard = s.n)
+    val local = movesOf(pos)
+    if v.resigned.isEmpty && v.error.isEmpty && local.startsWith(v.moves) then waitOn(t2)
+    else
+      val there = v.game.position
+      val note = v.error.fold(Part.info("A move was made on another device."))(why =>
+        Part.warning(s"Not played here: $why — the game as it stands now."))
+      val own = t.mode match { case Mode.Against(c) => c; case Mode.Two => Black }
+      val listed = t.keys.fold(pure[Unit, R](()))(keys => Kept.note[R](Kept(keys.link(t.mode), there.size,
+        there.moves, own), over = v.game.over))
+      listed.andThen(
+        if v.game.over then end[R](t2, there, v.resigned)
+        else t.mode match
+          case Mode.Against(c) if there.toPlay != c => elsewhereThinks[R](t2, there, List(note))
+          case _ => defer(turn[R](t2, there, List(note))))
+
+  /** the model's turn, thought on another device: the board, waiting for its move — or "Think here" */
+  private def elsewhereThinks[R[_]: Has[Ui]: Has[Model]: Has[Remote]: Has[Place]: Has[Clipboard]: Has[Settings]](
+      t: Table, pos: Position, said: List[Part]): Unit ! R =
+    updates[R](t).flatMap { heard =>
+      val screen = Screen[Act]("Go")((Board(pos, Set.empty) +: heading(t.mode, pos) +: (said :+
+        Part.info("The model is thinking on the other device…")))*)(Button("Think here")(Act.ThinkHere),
+        Button("Menu")(Act.Menu))
+      show(heard.fold(screen)(h => screen.until(h.map(Act.Update(_))))).flatMap {
+        case Act.Update(s) => heardFrom[R](t, pos, said, s)(t2 => elsewhereThinks[R](t2, pos, said))
+        case Act.ThinkHere => modelMoves[R](t, pos)
+        case _ => leave[R]
+      }
+    }
+
+  /** a person's turn: a button at each legal point, Pass, Resign, Menu — and the game's link to copy; a kept game
+   * listens to the server meanwhile (`heardFrom`) */
   def turn[R[_]: Has[Ui]: Has[Model]: Has[Remote]: Has[Place]: Has[Clipboard]: Has[Settings]](t: Table,
       pos: Position, said: List[Part]): Unit ! R =
     if pos.over then end[R](t, pos, None)
-    else elsewhere[R](t).flatMap { link =>
+    else elsewhere[R](t).flatMap(link => updates[R](t).flatMap { heard =>
       val legal = Rules.legal(pos)
       val points = legal.map(p => Button(pos.name(p))(Act.Stone(p)).at(s"p$p"))
-      show(Screen[Act]("Go")((Board(pos, legal.toSet) +: heading(t.mode, pos) +: (said ++ link))*)(
+      val screen = Screen[Act]("Go")((Board(pos, legal.toSet) +: heading(t.mode, pos) +: (said ++ link))*)(
         (points ++ Seq(Button("Pass")(Act.Pass), Button("Resign", Style.Danger)(Act.Resign),
           Button("Menu")(Act.Menu)) ++ (if link.isEmpty then Nil else Seq(Button("Copy this game's link")(
-          Act.Copy))))*)).flatMap {
-        case Act.Menu => leave[R]
+          Act.Copy))))*)
+      show(heard.fold(screen)(h => screen.until(h.map(Act.Update(_))))).flatMap {
+        case Act.Update(s) => heardFrom[R](t, pos, said, s)(t2 => turn[R](t2, pos, said))
+        case Act.Menu | Act.ThinkHere => leave[R]
         case Act.Copy => elsewhereText[R](t).flatMap(l => copy[R](l)).flatMap(done => defer(turn[R](t, pos,
           List(if done then Part.info("This game's link is copied: open it on the other device.")
             else Part.warning("This browser does not let the page copy: copy the link from the text.")))))
@@ -175,7 +228,7 @@ object Go:
           val next = Rules.play(pos, p)
           kept[R](t, pos.toPlay, Action.Move(p), next, resigned = false).andThen(after[R](t, next))
       }
-    }
+    })
 
   private def elsewhereText[R[_]: Has[Place]](t: Table): String ! R =
     perform[Place](Place.Base()).map(base => s"$base#${t.keys.fold("")(k => Place.print(k.link(t.mode)))}")

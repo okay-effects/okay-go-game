@@ -35,7 +35,8 @@ class OnlineSuite extends munit.FunSuite:
   /** what the programs copied, newest last */
   val copied: scala.collection.mutable.Buffer[String] = scala.collection.mutable.Buffer.empty
   def program(t: Tables#Client, place: Handles[Place]): Step[Unit] =
-    on(steps(keptIn(scala.collection.mutable.Map.empty[String, String])(copiedTo(copied)(place(t(Model.searching(new scala.util.Random(1), 50)(Go.main[App])))))))
+    on(steps(keptIn(scala.collection.mutable.Map.empty[String, String])(copiedTo(copied)(place(t(
+      Model.searching(new scala.util.Random(1), 50)(Go.main[App])))))))
 
   test("a game far apart: made by Black, joined by the friend's link, watched; moves seen by all; a resignation") {
     val tables = Tables()
@@ -107,7 +108,8 @@ class OnlineSuite extends munit.FunSuite:
   def opened(step: Step[Unit], c: Tables#Client): Step[Unit] = step match
     case w: Step.Waiting[Unit, s] if w.screen.events.isDefined =>
       assertEquals(w.screen.title, "Go"); on(w.resume(Some(c.latest.get).asInstanceOf[s]))
-    case w: Step.Waiting[?, ?] => fail(s"not opening: ${w.screen.title} ${w.screen.parts} ${w.screen.buttons.map(_.label)}")
+    case w: Step.Waiting[?, ?] =>
+      fail(s"not opening: ${w.screen.title} ${w.screen.parts} ${w.screen.buttons.map(_.label)}")
     case other => fail(s"not opening: $other")
 
   test("a game against the model kept on the server: its link opens it on another device where it stood") {
@@ -154,4 +156,44 @@ class OnlineSuite extends munit.FunSuite:
     val b = opened(b0, c)
     assert(texts(b).exists(_.startsWith("White to play · move 4")), texts(b).toString)
     assert(!screen(b).buttons.exists(_.label == "G7"), "a taken point has no button")
+  }
+
+  /** what a device's client heard last, given to its game's screen, which listens to the server */
+  def heardGame(step: Step[Unit], c: Tables#Client): Step[Unit] = toldOf(step, c.latest.get)
+  def toldOf(step: Step[Unit], seen: Seen): Step[Unit] = step match
+    case w: Step.Waiting[Unit, s] if w.screen.events.isDefined => on(w.resume(Go.Act.Update(seen).asInstanceOf[s]))
+    case other => fail(s"not listening: $other")
+
+  test("one game open on two devices at once: a move on one is seen on the other; the model thinks where it moved") {
+    val tables = Tables()
+    val here = Place.fixed()
+    val (a0, ca) = device(tables, here, scala.collection.mutable.Map.empty)
+    var a = press(press(a0, "Play Black against the model"), "9 × 9 — a quick game")
+    val (b0, cb) = device(tables, Place.fixed(here.now), scala.collection.mutable.Map.empty)
+    var b = opened(b0, cb)
+    a = press(a, "E5") // the model answers on this device
+    val g = here.now("g")
+    assertEquals(tables.game(g).map(_.moves.size), Some(2))
+    // the other device hears the person's move: the model's turn, thought there — this one waits
+    b = toldOf(b, cb.seen.find(_.view.moves.size == 1).get)
+    assert(texts(b).contains("The model is thinking on the other device…"), texts(b).toString)
+    assertEquals(screen(b).buttons.map(_.label), List("Think here", "Menu"))
+    // ...then hears the model's move: Black to play here, with both stones
+    b = heardGame(b, cb)
+    assert(texts(b).exists(_.startsWith("You play Black · Black to play · move 3")), texts(b).toString)
+    assert(texts(b).contains("A move was made on another device."), texts(b).toString)
+    // played on this one now: the first device hears it and its model reply
+    b = press(b, "D4")
+    assertEquals(tables.game(g).map(_.moves.size), Some(4))
+    a = heardGame(heardGame(a, ca), ca)
+    assert(texts(a).exists(_.startsWith("You play Black · Black to play · move 5")), texts(a).toString)
+    // both press a point at once: the second refused by the server, its page set to the game as it stands
+    a = press(a, "C3"); b = press(b, "G7")
+    b = heardGame(b, cb)
+    assert(texts(b).exists(_.startsWith("Not played here")), texts(b).toString)
+    assertEquals(tables.game(g).map(_.moves.size), Some(6))
+    // a resignation on one ends it on the other
+    a = press(a, "Resign")
+    b = heardGame(b, cb)
+    assertEquals(screen(b).title, "Game over")
   }

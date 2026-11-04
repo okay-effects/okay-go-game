@@ -64,7 +64,7 @@ final class Sockets(server: String) extends Handles[Remote]:
         heard.lastOption.filter(_.n > after).foreach(s => dom.window.setTimeout(() => l(s), 0))
         () => listeners = listeners.filterNot(_ eq l)
       }
-      case Remote.Send(action, key) => send(Room.writeAction(action, key))
+      case Remote.Send(action, key, at) => send(Room.writeAction(action, key, at))
       case Remote.Leave() =>
         val was = socket; socket = None; address = None; waiting = Vector.empty
         was.foreach(_.close())))

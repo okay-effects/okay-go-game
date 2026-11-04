@@ -53,9 +53,14 @@ class GamesSuite extends munit.FunSuite:
     assertEquals(last(b).error, Some("a watcher cannot play"))
     await(b.send(Room.writeAction(Action.Pass, Some(white)))); await(c.settled())
     assertEquals(last(b).error, Some("it is Black's turn"))
+    // a move made at an earlier number of moves (another device's came first): refused
+    await(b.send(Room.writeAction(Action.Move(e5 + 2), Some(black), Some(1)))); await(c.settled())
+    assertEquals(last(b).error, Some("another move came first"))
+    await(b.send(Room.writeAction(Action.Move(e5 + 2), Some(black), Some(2)))); await(c.settled())
+    assertEquals(last(b).moves, Vector(e5, d4, e5 + 2))
     // the game opened again by its key: the moves kept
     val again = socket(c, s"key=$white")
-    assertEquals(last(again).moves, Vector(e5, d4))
+    assertEquals(last(again).moves, Vector(e5, d4, e5 + 2))
   }
 
   test("a move told to everyone; out of turn, a watcher's, or illegal: refused to that socket with the reason") {

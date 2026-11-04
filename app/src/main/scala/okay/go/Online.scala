@@ -19,8 +19,9 @@ enum Remote[X]:
   case Join(game: String, key: Option[String], make: Option[Invite]) extends Remote[Unit]
   /** what the server says after the `after`th thing it said: answered at once when that has come already */
   case Updates(after: Int) extends Remote[Events[Seen]]
-  /** an action — for the seat of `key` when given (a page holding both seats), else this socket's own */
-  case Send(action: Action, key: Option[String] = None) extends Remote[Unit]
+  /** an action — for the seat of `key` when given (a page holding both seats), else this socket's own; made `at` a
+   * number of moves, when said: refused if the game has moved on */
+  case Send(action: Action, key: Option[String] = None, at: Option[Int] = None) extends Remote[Unit]
   case Leave() extends Remote[Unit]
 
 /** THE PAGE'S ADDRESS, as an effect: a game's link is its fragment (#g=<id>&k=<key>) */
@@ -80,8 +81,8 @@ final class Tables:
           seen.lastOption.filter(_.n > after).foreach(k)
           () => listeners = listeners.filterNot(_ eq l)
         }
-        case Remote.Send(a, key) => game.foreach { id =>
-          Room.act(games(id), key.fold(seat)(games(id).seat), a) match
+        case Remote.Send(a, key, at) => game.foreach { id =>
+          Room.act(games(id), key.fold(seat)(games(id).seat), a, at) match
             case Right(next) => games += id -> next; tell(id)
             case Left(why) =>
               val g = games(id)
@@ -122,8 +123,8 @@ object Online:
       Rules.other(i.colour))}: send them this link"), Part.text(s"$base#g=$g&k=${i.friend}"))) ++
       List(Part.text("Anyone can watch with this one"), Part.text(watch)))*)
 
-  def screen[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]: Has[Settings]](base: String, g: String, made: Option[Invite],
-      seen: Option[Seen], sent: Boolean, note: Option[Part]): Unit ! R =
+  def screen[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]: Has[Settings]](base: String, g: String,
+      made: Option[Invite], seen: Option[Seen], sent: Boolean, note: Option[Part]): Unit ! R =
     perform[Remote](Remote.Updates(seen.fold(0)(_.n))).flatMap { updates =>
       val leave = Button("Leave")(Act.Leave)
       val watchLink = s"$base#g=$g"
@@ -167,9 +168,10 @@ object Online:
         case Act.Copy(link, whose) => copy[R](link).flatMap(done => defer(screen[R](base, g, made, seen, sent,
           Some(if done then Part.info(s"The $whose link is copied: paste it in a message.")
             else Part.warning(s"This browser does not let the page copy: copy the $whose link from the text.")))))
-        case Act.Stone(p) => perform[Remote](Remote.Send(Action.Move(p))).andThen(
+        // a move made at the moves seen: refused if the game moved on meanwhile (this seat on another device)
+        case Act.Stone(p) => perform[Remote](Remote.Send(Action.Move(p), None, seen.map(_.view.moves.size))).andThen(
           defer(screen[R](base, g, made, seen, sent = true, None)))
-        case Act.Pass => perform[Remote](Remote.Send(Action.Pass)).andThen(
+        case Act.Pass => perform[Remote](Remote.Send(Action.Pass, None, seen.map(_.view.moves.size))).andThen(
           defer(screen[R](base, g, made, seen, sent = true, None)))
         case Act.Resign => confirm[R]("Resign this game?").flatMap(yes =>
           (if yes then perform[Remote](Remote.Send(Action.Resign)) else pure(())).andThen(

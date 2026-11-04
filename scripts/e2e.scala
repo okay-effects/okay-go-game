@@ -57,6 +57,14 @@ def run(page: String, pictures: String): Unit =
   val there = q.locator("rect[class*='okay-mark-go-black'], rect[class*='okay-mark-go-white']").count()
   if there != stones then fail(s"opened again: $there stones, not $stones")
   println(s"kept: opened again in another tab with its $there stones")
+  // open in both tabs at once: a move in the other one is seen in this one, with the model's reply thought there
+  val free = Seq("C7", "G3", "C3", "G7", "B2", "H8").find(m => point(m).count() == 1).get
+  val before = stones
+  q.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName(free).setExact(true)).click()
+  val both = "rect[class*='okay-mark-go-black'], rect[class*='okay-mark-go-white']"
+  p.waitForFunction("() => document.body.textContent.includes('A move was made on another device.') && " +
+    s"document.querySelectorAll(\"$both\").length == ${before + 2}")
+  println(s"in step: $free played in the other tab, and the reply, seen here")
   q.close()
   // the full board against the model: its replies timed, how many games it played out
   button("Menu").click(); button("Play Black against the model").click()

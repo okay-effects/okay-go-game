@@ -204,5 +204,12 @@ game open) or &o=… (the other person's at that screen). Opened again — the s
 page waits for the moves the server keeps ("Opening the game…", Menu its way out) and goes on where it stood. Under the
 board, "Continue on another device": the link as a QR code (okay-ui's `Part.qr`) and the text, a button to copy it.
 "Continue a game" in the menu: this browser's games (`Kept`: okay-ui's `Settings` in local storage, "go.games"), the
-latest first, at most 20, the online ones too; a finished game dropped. Two pages on one game at once are not kept in
-step (each sends its moves; the server refuses one out of turn): open it in one place at a time.
+latest first, at most 20, the online ones too; a finished game dropped.
+OPEN IN MANY PLACES AT ONCE: the server the game's truth. A kept game's screen listens to it while the person thinks
+(`heardFrom`): its own move come back, or not yet, it waits on; else it takes the game as the server has it — a move
+made on another device ("A move was made on another device."), a resignation, or its own refused. Every move carries
+the number of moves it was made at (`at`): the server refuses it if the game has moved on ("another move came
+first") — a move meant for one position never lands in another. The model's turn reached by another device's move is
+thought there: this page shows "The model is thinking on the other device…" and waits, or thinks itself ("Think
+here", that device closed). Checked: OnlineSuite (two devices, a race, a resignation), GamesSuite (a stale move),
+e2e (a move in one tab seen in the other, the model's reply with it).
