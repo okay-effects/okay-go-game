@@ -57,6 +57,14 @@ captured before passing, the board counted as it stands. Points named by column 
   move is sent and the board waits for what the server says; buttons only on the person's turn, at legal points; a
   watcher has only Leave. The status says who plays and who waits, who is here, how many watch; at the end the
   result.
+- The links' buttons: "Copy the friend's link" (while the friend has not come, or before the first move) and "Copy
+  the watchers' link" (always), by okay-ui's `Clipboard` — the browser's `navigator.clipboard` in the page
+  (`InThePage.clipboard`), a list in tests (`copiedTo`). Copied: "The friend's link is copied: paste it in a
+  message."; a browser that does not let the page copy: "copy … from the text" — the links stay shown as text.
+- An idle game deleted: every socket opened and every action kept marks the game touched and sets its object's alarm
+  for 30 days later (`Games.idle`, `Durable.wakeAt`); the alarm deletes the game when no socket is open and nothing
+  touched it for 30 days, else sets itself again. A deleted game's links answer "no such game" (404). Checked in
+  `GamesSuite` on `MemoryCloud` with a moved clock (`fireAlarms`).
 - Where: Cloudflare (main) — https://okay-go-game.okay-effects.workers.dev, `scripts/deploy.sh`; the page's server is
   `?server=` (default that Worker). The host (the fallback, the same code): `sbt serverJVM/run` (`OKAY_GO_DIR`,
   `PORT`, `HOST`), the page served by it too when built — `http://127.0.0.1:8787/?server=ws://127.0.0.1:8787`.

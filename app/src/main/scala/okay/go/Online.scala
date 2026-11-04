@@ -97,9 +97,10 @@ object Online:
   enum Act:
     case Update(s: Seen)
     case Stone(p: Int)
+    case Copy(link: String, whose: String)
     case Pass, Resign, Leave
 
-  def start[R[_]: Has[Ui]: Has[Remote]: Has[Place]]: Unit ! R =
+  def start[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]]: Unit ! R =
     menu[Int, R]("Play a friend online", "I play Black" -> Rules.Black, "I play White" -> Rules.White,
       "Back" -> 0).flatMap {
       case 0 => pure(())
@@ -107,10 +108,10 @@ object Online:
     }
 
   /** sat at game `g` with `key` (none: watching), the game made if it is new (`made`); the page's address its link */
-  def join[R[_]: Has[Ui]: Has[Remote]: Has[Place]](g: String, key: Option[String], made: Option[Invite]): Unit ! R =
+  def join[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]](g: String, key: Option[String], made: Option[Invite]): Unit ! R =
     perform[Place](Place.Write(Map("g" -> g) ++ key.map("k" -> _))).andThen(
     perform[Remote](Remote.Join(g, key, made))).andThen(
-    perform[Place](Place.Base())).flatMap(base => screen[R](base, g, made, None, sent = false))
+    perform[Place](Place.Base())).flatMap(base => screen[R](base, g, made, None, sent = false, None))
 
   private def links(base: String, g: String, made: Option[Invite]): Part =
     val watch = s"$base#g=$g"
@@ -118,12 +119,18 @@ object Online:
       Rules.other(i.colour))}: send them this link"), Part.text(s"$base#g=$g&k=${i.friend}"))) ++
       List(Part.text("Anyone can watch with this one"), Part.text(watch)))*)
 
-  def screen[R[_]: Has[Ui]: Has[Remote]: Has[Place]](base: String, g: String, made: Option[Invite],
-      seen: Option[Seen], sent: Boolean): Unit ! R =
+  def screen[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]](base: String, g: String, made: Option[Invite],
+      seen: Option[Seen], sent: Boolean, note: Option[Part]): Unit ! R =
     perform[Remote](Remote.Updates(seen.fold(0)(_.n))).flatMap { updates =>
       val leave = Button("Leave")(Act.Leave)
+      val watchLink = s"$base#g=$g"
+      // the links' buttons: the friend's while the friend has not come, the watchers' always
+      def copies(friendToo: Boolean) = made.filter(_ => friendToo).toList.map(i =>
+        Button("Copy the friend's link")(Act.Copy(s"$base#g=$g&k=${i.friend}", "friend's"))) :+
+        Button("Copy the watchers' link")(Act.Copy(watchLink, "watchers'"))
       val shown: Screen[Act] = seen match
-        case None => Screen[Act]("Go online")(Part.text("Connecting…"), links(base, g, made))(leave)
+        case None => Screen[Act]("Go online")((List(Part.text("Connecting…"), links(base, g, made)) ++ note)*)(
+          (copies(true) :+ leave)*)
         case Some(s) =>
           val v = s.view; val game = v.game; val pos = game.position
           val player = v.seat != Room.Watch
@@ -137,23 +144,28 @@ object Online:
           def here(b: Boolean) = if b then "here" else "away"
           val present = s"Black ${here(v.black)} · White ${here(v.white)}" +
             (if v.watching > 0 then s" · ${v.watching} watching" else "")
+          val inviting = !(v.black && v.white) || pos.moves == 0
           val parts = List(Board(pos, legal.toSet, areas = game.over && game.resigned.isEmpty),
             Part.text(s"$who · $state · move ${pos.moves + 1}"), Part.text(present)) ++
-            v.error.map(Part.warning) ++ (if game.over then List(Part.info(state)) else Nil) ++
-            List(links(base, g, made.filter(_ => !(v.black && v.white) || pos.moves == 0)))
+            v.error.map(Part.warning) ++ (if game.over then List(Part.info(state)) else Nil) ++ note ++
+            List(links(base, g, made.filter(_ => inviting)))
           val acts = legal.map(p => Button(Rules.name(p))(Act.Stone(p)).at(s"p$p")) ++
             (if mine then Seq(Button("Pass")(Act.Pass)) else Nil) ++
-            (if player && !game.over then Seq(Button("Resign", Style.Danger)(Act.Resign)) else Nil) :+ leave
+            (if player && !game.over then Seq(Button("Resign", Style.Danger)(Act.Resign)) else Nil) ++
+            copies(inviting) :+ leave
           Screen[Act](if game.over then "Game over" else "Go online")(parts*)(acts*)
       show(shown.until(updates.map(Act.Update(_)))).flatMap {
-        case Act.Update(s) => defer(screen[R](base, g, made, Some(s), sent = false))
+        case Act.Update(s) => defer(screen[R](base, g, made, Some(s), sent = false, note))
+        case Act.Copy(link, whose) => copy[R](link).flatMap(done => defer(screen[R](base, g, made, seen, sent,
+          Some(if done then Part.info(s"The $whose link is copied: paste it in a message.")
+            else Part.warning(s"This browser does not let the page copy: copy the $whose link from the text.")))))
         case Act.Stone(p) => perform[Remote](Remote.Send(Action.Move(p))).andThen(
-          defer(screen[R](base, g, made, seen, sent = true)))
+          defer(screen[R](base, g, made, seen, sent = true, None)))
         case Act.Pass => perform[Remote](Remote.Send(Action.Pass)).andThen(
-          defer(screen[R](base, g, made, seen, sent = true)))
+          defer(screen[R](base, g, made, seen, sent = true, None)))
         case Act.Resign => confirm[R]("Resign this game?").flatMap(yes =>
           (if yes then perform[Remote](Remote.Send(Action.Resign)) else pure(())).andThen(
-            defer(screen[R](base, g, made, seen, sent = yes))))
+            defer(screen[R](base, g, made, seen, sent = yes, None))))
         case Act.Leave => perform[Remote](Remote.Leave()).andThen(perform[Place](Place.Write(Map.empty)))
       }
     }

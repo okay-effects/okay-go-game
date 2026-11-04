@@ -4,6 +4,7 @@ import okay.effects.json.Json
 import okay.go.Room
 import okay.go.Room.{Game, View}
 import okay.scala3.*
+import okay.scala3.std.Clock
 import okay.serverless.Durable
 import okay.serverless.cloud.*
 
@@ -15,6 +16,8 @@ import okay.serverless.cloud.*
  */
 object Games:
   val namespace = "GAMES"
+  /** a game nobody has played or opened for this long is deleted by its alarm */
+  val idle: Long = 30L * 24 * 60 * 60 * 1000
 
   /** the Worker: a socket at /games/<id>/socket goes to the game's object as it is */
   object Lobby extends App:
@@ -27,9 +30,25 @@ object Games:
 
   object Table extends Actor:
     private def load(name: String): Option[Game] ! InActor =
-      Durable.step[ActorStep, InActor, Option[Json]](name)(Durable.get[Json, ActorStep]("game")).map(_.flatMap(Room.read))
+      Durable.step[ActorStep, InActor, Option[Json]](name)(Durable.get[Json, ActorStep]("game"))
+        .map(_.flatMap(Room.read))
     private def keep(name: String, g: Game): Unit ! InActor =
       Durable.step[ActorStep, InActor, Unit](name)(Durable.put[Json, ActorStep]("game", Room.write(g)))
+    /** the game used now: its alarm set for `idle` from now */
+    private def touch(name: String): Unit ! InActor = Clock.now[InActor].flatMap(now =>
+      Durable.step[ActorStep, InActor, Unit](name)(Durable.put[Long, ActorStep]("touched", now)
+        .andThen(Durable.wakeAt[ActorStep](now + idle))))
+
+    /** THE ALARM: a game with no socket open and untouched for `idle` deleted; else woken again later */
+    override def alarm(name: String): Unit ! InActor = Clock.now[InActor].flatMap(now =>
+      Sockets.open[InActor]().flatMap(open => Durable.step[ActorStep, InActor, Unit](name)(
+        Durable.get[Long, ActorStep]("touched").flatMap { t =>
+          val last = t.getOrElse(0L)
+          if open.nonEmpty then Durable.wakeAt[ActorStep](now + idle)
+          else if now - last >= idle then
+            Durable.delete[ActorStep]("game").andThen(Durable.delete[ActorStep]("touched"))
+          else Durable.wakeAt[ActorStep](last + idle)
+        })))
 
     def fetch(name: String, request: Request): Response ! InActor =
       if !request.path.endsWith("/socket") then pure(Response.notFound())
@@ -44,8 +63,8 @@ object Games:
             case _ => pure(None)
         made.flatMap {
           case None => pure(Response.notFound("no such game"))
-          case Some(g) => Sockets.accept[InActor](request, Room.seatName(g.seat(key))).flatMap { r =>
-            Sockets.later[InActor](tell(name, None)).as(r)
+          case Some(g) => touch(name).andThen(Sockets.accept[InActor](request, Room.seatName(g.seat(key)))).flatMap {
+            r => Sockets.later[InActor](tell(name, None)).as(r)
           }
         }
       }
@@ -58,7 +77,7 @@ object Games:
           case None => refuse(name, socket, "no such game")
           case Some(g) => Room.act(g, seat, a) match
             case Left(why) => refuse(name, socket, why)
-            case Right(next) => keep(name, next).andThen(tell(name, None))
+            case Right(next) => keep(name, next).andThen(touch(name)).andThen(tell(name, None))
         }
 
     override def closed(name: String, socket: Socket): Unit ! InActor = tell(name, Some(socket))

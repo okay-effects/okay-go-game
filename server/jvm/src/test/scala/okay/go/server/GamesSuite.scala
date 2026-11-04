@@ -14,8 +14,10 @@ class GamesSuite extends munit.FunSuite:
   val id = "0123456789abcdef0123456789abcdef"
   val black = "b" * 32; val white = "a" * 32; val other = "c" * 32
 
+  /** the cloud's clock, moved by the tests */
+  var now: Long = 1_800_000_000_000L
   def cloud(): MemoryCloud =
-    val c = new MemoryCloud()
+    val c = new MemoryCloud(() => now)
     Games.actors.foreach((ns, a) => c.actors(ns) = a)
     c
   def socket(c: MemoryCloud, query: String): c.MemorySocket =
@@ -79,4 +81,24 @@ class GamesSuite extends munit.FunSuite:
     val b = socket(c, s"key=$black&black=$black&white=$white"); val w = socket(c, s"key=$white")
     await(w.close()); await(c.settled())
     assertEquals((last(b).black, last(b).white), (true, false))
+  }
+
+  test("a game nobody touches for 30 days is deleted by its alarm; one played or watched is kept") {
+    val day = 24L * 60 * 60 * 1000
+    val c = cloud()
+    val b = socket(c, s"key=$black&black=$black&white=$white")
+    act(c, b, Action.Move(e5))
+    await(b.close()); await(c.settled())
+    now += 20 * day
+    assertEquals(await(c.fireAlarms()), 0, "not due yet")
+    val w = socket(c, s"key=$white") // opened again: touched
+    now += 25 * day
+    assertEquals(await(c.fireAlarms()), 1)
+    assert(c.stored(Games.namespace, id).contains("game"), "a socket is open: kept")
+    await(w.close()); await(c.settled())
+    now += 31 * day
+    assertEquals(await(c.fireAlarms()), 1)
+    assert(!c.stored(Games.namespace, id).contains("game"), c.stored(Games.namespace, id).toString)
+    val r = await(c.serve(Games.Lobby)(Request("GET", s"/games/$id/socket?key=$white")))
+    assertEquals(r.status, 404)
   }

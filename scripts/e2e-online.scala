@@ -23,7 +23,9 @@ def run(page: String): Unit =
   val browser = pw.chromium().launch(BrowserType.LaunchOptions().setExecutablePath(Path.of(exe)))
   val errors = scala.collection.mutable.ArrayBuffer.empty[String]
   def person(): Page =
-    val p = browser.newContext(Browser.NewContextOptions().setViewportSize(520, 1100)).newPage()
+    val ctx = browser.newContext(Browser.NewContextOptions().setViewportSize(520, 1100))
+    ctx.grantPermissions(java.util.List.of("clipboard-read", "clipboard-write"))
+    val p = ctx.newPage()
     p.setDefaultTimeout(20000); p.onPageError(e => errors += e); p
   def button(p: Page, n: String) = p.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName(n).setExact(true))
   def point(p: Page, n: String) = p.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName(n).setExact(true))
@@ -37,7 +39,11 @@ def run(page: String): Unit =
   button(black, "Play a friend online").click(); button(black, "I play Black").click()
   has(black, "Black here")
   val lines = black.locator("#app").innerText().linesIterator.map(_.trim).toVector
-  val friend = lines.find(l => l.contains("#g=") && l.contains("&k=")).getOrElse(fail("no friend's link"))
+  val shown = lines.find(l => l.contains("#g=") && l.contains("&k=")).getOrElse(fail("no friend's link"))
+  // the friend's link by its button: the clipboard holds the link shown
+  button(black, "Copy the friend's link").click(); has(black, "link is copied")
+  val friend = black.evaluate("() => navigator.clipboard.readText()").toString
+  if friend != shown then fail(s"copied $friend, shown $shown")
   val watch = lines.find(l => l.contains("#g=") && !l.contains("&k=")).getOrElse(fail("no watchers' link"))
   println(s"friend: $friend\nwatch:  $watch")
   val white = person(); white.navigate(url(white, friend)); has(white, "You play White")

@@ -46,4 +46,5 @@ object InTheBrowser:
       |""".stripMargin)
 
   def main(args: Array[String]): Unit =
-    Page.mount(OnFaces.program(steps(PageAddress()(Sockets(Sockets.server)(Model.toy()(Go.main[App]))))), skin)
+    val world = okay.business.web.InThePage.clipboard(PageAddress()(Sockets(Sockets.server)(Model.toy()(Go.main[App]))))
+    Page.mount(OnFaces.program(steps(world)), skin)

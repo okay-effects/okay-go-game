@@ -32,8 +32,10 @@ class OnlineSuite extends munit.FunSuite:
     case Part.Section(_, ps) => ps.collect { case Part.Text(t) => t }
     case _ => Nil
   }
+  /** what the programs copied, newest last */
+  val copied: scala.collection.mutable.Buffer[String] = scala.collection.mutable.Buffer.empty
   def program(t: Tables#Client, place: Handles[Place]): Step[Unit] =
-    on(steps(place(t(Model.toy(new scala.util.Random(1))(Go.main[App])))))
+    on(steps(copiedTo(copied)(place(t(Model.toy(new scala.util.Random(1))(Go.main[App]))))))
   val e5: Int = Rules.points.find(Rules.name(_) == "E5").get
 
   test("a game far apart: made by Black, joined by the friend's link, watched; moves seen by all; a resignation") {
@@ -50,10 +52,10 @@ class OnlineSuite extends munit.FunSuite:
     val b = tables.client()
     var white = hear(program(b, Place.fixed(Place.parse(friendLink.dropWhile(_ != '#')))), b)
     assert(texts(white).exists(_.startsWith("You play White · Black to play — waiting")), texts(white).toString)
-    assertEquals(screen(white).buttons.map(_.label), List("Resign", "Leave"))
+    assertEquals(screen(white).buttons.map(_.label), List("Resign", "Copy the watchers' link", "Leave"))
     val c = tables.client()
     val watcher = hear(program(c, Place.fixed(Map("g" -> fragment("g")))), c)
-    assertEquals(screen(watcher).buttons.map(_.label), List("Leave"))
+    assertEquals(screen(watcher).buttons.map(_.label), List("Copy the watchers' link", "Leave"))
     // Black's move: sent, then seen by everyone
     black = hear(press(hear(black, a), "E5"), a)
     white = hear(white, b)
@@ -76,4 +78,22 @@ class OnlineSuite extends munit.FunSuite:
     black = press(black, "Leave")
     assertEquals(screen(black).title, "Go 9 × 9")
     assertEquals(place.now, Map.empty[String, String])
+  }
+
+  test("the links copied by their buttons: the friend's while they have not come, the watchers' always") {
+    val tables = Tables()
+    val a = tables.client(); val place = Place.fixed()
+    var black = hear(press(press(program(a, place), "Play a friend online"), "I play Black"), a)
+    black = press(black, "Copy the friend's link")
+    val g = place.now("g")
+    assert(copied.last.startsWith(s"https://example.org/go/#g=$g&k=") && !copied.last.contains(place.now("k")))
+    assert(texts(black).contains("The friend's link is copied: paste it in a message."), texts(black).toString)
+    black = press(black, "Copy the watchers' link")
+    assertEquals(copied.last, s"https://example.org/go/#g=$g")
+    // the friend comes and a move is made: only the watchers' link is offered
+    val b = tables.client()
+    hear(program(b, Place.fixed(Place.parse(copied(copied.size - 2).dropWhile(_ != '#')))), b)
+    black = hear(press(hear(black, a), "E5"), a)
+    assert(!screen(black).buttons.exists(_.label == "Copy the friend's link"))
+    assert(screen(black).buttons.exists(_.label == "Copy the watchers' link"))
   }

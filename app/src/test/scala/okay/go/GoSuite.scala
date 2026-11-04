@@ -8,7 +8,8 @@ import okay.go.Go.App
  * and a person against the toy model, whose every move is legal */
 class GoSuite extends munit.FunSuite:
   /** the application with its world: the model given, no game far apart, the page's address empty */
-  def app(toy: Handles[Model]): Step[Unit] = steps(Place.fixed()(Tables().client()(toy(Go.main[App]))))
+  def app(toy: Handles[Model]): Step[Unit] = steps(copiedTo(scala.collection.mutable.Buffer.empty[String])(Place.fixed()(Tables().client()(
+    toy(Go.main[App])))))
   def p(name: String): Int = points.find(Rules.name(_) == name).get
   /** a position from moves by name, "pass" a pass */
   def moves(ms: String*): Position = ms.foldLeft(start)((pos, m) => if m == "pass" then pass(pos) else play(pos, p(m)))
