@@ -10,14 +10,10 @@ trait Handles[E[_]]:
 /** what the model answers: the point it plays (or the position's pass index), and what it thinks, in words */
 final case class Thought(move: Int, note: String)
 
-/** an answer now (a test's search), or later (a page's, thought between its frames) */
-enum Pending:
-  case Now(thought: Thought)
-  case Later(thoughts: Events[Thought])
-
-/** THE MODEL, as an effect: given a position, its move. Which model answers, and how long it thinks, is a handler's */
+/** THE MODEL, as an effect: given a position, its move. Which model answers, how long it thinks, and whether it
+ * answers at once (a test's) or later (a page's, by okay-scala's `Async`) is a handler's */
 enum Model[X]:
-  case Think(pos: Position) extends Model[Pending]
+  case Think(pos: Position) extends Model[Thought]
 
 object Model:
   /** how long a move may be thought about, by the board's size: at most `playouts` games, or `millis` */
@@ -47,4 +43,4 @@ object Model:
         handle(p, Handler.Tail[Model, Rest, A, A](a => pure(a), [X] => (asked: Model[X]) => asked match
           case Model.Think(pos) =>
             val s = Searcher(pos, random); s.run(playouts)
-            Pending.Now(answer(pos, s))))
+            answer(pos, s)))

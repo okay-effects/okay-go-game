@@ -1,9 +1,12 @@
 package okay.go
 
-import okay.business.faces.{OnFaces, Skin}
-import okay.business.laminar.Page
-import okay.business.scala3.steps
-import okay.go.Go.App
+import okay.business.faces.Skin
+import okay.business.laminar.Laminar
+import okay.scala3.std.Async
+import org.scalajs.dom
+import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
+import okay.business.scala3.{+, Clipboard, Ui}
+
 
 /** GO IN THE BROWSER: `sbt appJS/web`, then open app/.js/target/web/index.html — the screens on okay-faces' Laminar
  * face, the toy model in the page. The whole application is the line below */
@@ -51,8 +54,11 @@ object InTheBrowser:
       |body .okay-mark-go-points-white .okay-mark-button > .okay-ref:hover { background: rgba(248, 246, 239, 0.8); }
       |""".stripMargin)
 
+  /** the page's row: the application's, and okay-scala's `Async` — the model thinks into it */
+  type Web[X] = (Async + Ui + Model + Remote + Place + Clipboard)[X]
+
   def main(args: Array[String]): Unit =
-    // the model thinks between the page's frames (`Thinking`); the links copied by the browser's clipboard
+    // the links copied by the browser's clipboard; games far apart over a socket; the model thinking between frames
     val world = okay.business.web.InThePage.clipboard(PageAddress()(Sockets(Sockets.server)(Thinking()(
-      Go.main[App]))))
-    Page.mount(OnFaces.program(steps(world)), skin)
+      Go.main[Web]))))
+    val _ = Async.start(Laminar.run(dom.document.getElementById("app"), skin)(world))

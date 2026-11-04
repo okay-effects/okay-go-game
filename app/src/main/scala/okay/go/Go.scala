@@ -6,7 +6,7 @@ import okay.go.Rules.{Black, Position, White}
 /**
  * GO ON 9 x 9, 13 x 13 OR 19 x 19, in okay-ui's words alone: two people at one board, two far apart (`Online`), or a
  * person against the model of `Model` — a search. The board is a picture with a button at every legal point: an
- * illegal move cannot be asked for. While the model thinks in a page, its screen waits for the thought (an event).
+ * illegal move cannot be asked for. While the model thinks, a working screen shows the board, Menu its way out.
  */
 object Go:
   type App[X] = (Ui + Model + Remote + Place + Clipboard)[X]
@@ -77,16 +77,14 @@ object Go:
     case Mode.Against(c) if pos.toPlay != c && !pos.over => modelMoves[R](mode, pos)
     case _ => defer(turn[R](mode, pos, Nil))
 
-  /** the model's move: thought at once, or later — then its screen waits, the board shown, Menu to leave */
+  /** the model's move: a working screen while it thinks — the board, "The model is thinking…" — with Menu as its way
+   * out: pressed, the thinking is cancelled (in a page, its `Async` wait) and the game left */
   def modelMoves[R[_]: Has[Ui]: Has[Model]](mode: Mode, pos: Position): Unit ! R =
-    perform[Model](Model.Think(pos)).flatMap {
-      case Pending.Now(t) => played[R](mode, pos, t)
-      case Pending.Later(thoughts) =>
-        show(Screen[Option[Thought]]("Go")(Board(pos, Set.empty), heading(mode, pos),
-          Part.info("The model is thinking…"))(Button("Menu")(None)).until(thoughts.map(Some(_)))).flatMap {
-          case None => pure(())
-          case Some(t) => played[R](mode, pos, t)
-        }
+    interruptible[Unit, Thought, R](Button("Menu")(()))(
+      working[R]("Go")(Board(pos, Set.empty), heading(mode, pos), Part.info("The model is thinking…"))
+        .andThen(perform[Model](Model.Think(pos)))).flatMap {
+      case Left(_) => pure(())
+      case Right(t) => played[R](mode, pos, t)
     }
 
   /** the model's thought played: its point if legal (a search's always is), else a pass */

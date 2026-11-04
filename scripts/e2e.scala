@@ -59,6 +59,10 @@ def run(page: String, pictures: String): Unit =
   val thought = "\\d+ games played out".r.findFirstIn(p.locator("#app").textContent()).getOrElse(fail("no thought"))
   println(s"19 x 19 replies: ${ms.mkString(", ")} ms; $thought")
   shot("go-19.png")
+  // Menu while the model thinks: the page answers at once, the search stopped
+  point("Q4").click(); has("The model is thinking")
+  val t1 = System.nanoTime(); button("Menu").click(); has("Two players")
+  println(s"Menu while thinking: back in ${(System.nanoTime() - t1) / 1000000} ms")
   if errors.nonEmpty then fail("page errors: " + errors.mkString("; "))
-  println(s"e2e: ok ($stones stones against the model)")
+  println("e2e: ok")
   browser.close(); pw.close()

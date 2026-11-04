@@ -8,16 +8,23 @@ The data model is effects; every implementation is a handler; the browser runs t
 
 | effect | operation | answered with | handlers |
 |---|---|---|---|
-| `Model` | `Think(position)` | `Pending`: a `Thought` (a point or a pass, words) now, or later as an event | `Thinking()` (the page), `Model.searching(r, games)` (tests) |
+| `Model` | `Think(position)` | a `Thought`: a point or a pass, and words | `Thinking()` into `Async` (the page), `Model.searching(r, games)` (tests) |
 | `Remote` | `Create`, `Join`, `Updates`, `Send`, `Leave` | a game far apart: its invite, its updates | `Sockets(server)` (the page), `Tables().client()` (tests) |
 | `Place` | `Read`, `Write`, `Base` | the page's address: a game's link | `PageAddress()` (the page), `Place.fixed` (tests) |
 | `Clipboard` | `Copy(text)` | whether it was copied | okay-ui's `InThePage.clipboard` (the page), `copiedTo` (tests) |
 | `Ui` | `Show(screen)` | the button pressed, or the screen's event | okay-ui's `steps` |
 
 ```scala
-val world = InThePage.clipboard(PageAddress()(Sockets(Sockets.server)(Thinking()(Go.main[App]))))
-Page.mount(OnFaces.program(steps(world)), skin)
+// the page's row: okay-scala's Async first, then the application's
+val world = InThePage.clipboard(PageAddress()(Sockets(Sockets.server)(Thinking()(Go.main[Web]))))
+Async.start(Laminar.run(dom.document.getElementById("app"), skin)(world))
 ```
+
+One program of one async effect, run by okay-ui's `Laminar.run`: the screens and their events (a game far apart's
+socket messages, `Screen.until`) on okay-faces' Laminar face, the model's thinking an `Async` wait. (Before
+2026-11-04 the page was `Page.mount` and the model answered by an event: okay-faces' faces kept listening after an
+event until the next screen, so `Laminar.run` looked as if it could not take events; okay-faces 0.1.0's web faces
+were republished with the fix, okay-ui's `EventsSuite` checks it.)
 
 ## The boards and the rules (`Geometry`, `Rules`, in `core`)
 
@@ -38,8 +45,9 @@ stones are not marked: they are captured before passing, the board counted as it
   asked for. The skin draws the button as a round shadow of the stone to be played under the pointer, and sizes the
   grid for each board (`[class$="-<size>"]`).
 - A turn: the status (who plays, the move, captures), Pass, Resign, Menu. Against the model, after the person's move
-  the model thinks: in a page the screen shows the board and "The model is thinking…" and waits for the thought (an
-  event; Menu leaves); then "The model played" and "The model thinks" (its chance to win, the games it played out).
+  the model thinks on a WORKING screen — the board, "The model is thinking…" — in an `interruptible` block whose exit
+  is Menu: pressed, the model's `Async` wait is cancelled (the search stops) and the game left; then "The model
+  played" and "The model thinks" (its chance to win, the games it played out).
 - The end: two passes — the result, Black's and White's counts with the board's komi; or a resignation.
 
 ## The model: a search (`Searcher`, `Fast`; operator, 2026-11-04: one model, strong)
@@ -55,7 +63,8 @@ Monte-Carlo tree search with RAVE and prior knowledge, on a fast board of any si
   fourth lines +0.1, the second −0.05; near the last move +0.05. The root's moves are the exact rules' (superko).
 - The answer (`Model.answer`): the point played most. A pass when nothing is worth playing, when the opponent has
   passed and the board as it stands is won, or when its chance is under 4% after 500 games.
-- In the page (`Thinking`): parts of ~25 ms between the page's frames until the board's budget (`Model.budget`): at
+- In the page (`Thinking`, `Model` into `Async.cancellable`): parts of ~25 ms between the page's frames until the
+  board's budget (`Model.budget`): at
   most 30 000 games, and 1.5 s on 9 × 9, 3 s on 13 × 13, 5 s on 19 × 19. Measured in Chromium: ~11 000 games a move
   on 9 × 9 in 1.5 s, ~4 800 on 19 × 19 in 5 s.
 - Measured against the search before it (MCTS-RAVE, light playouts, no priors) on 9 × 9: at 400 games a move 27 of 30

@@ -94,3 +94,12 @@ class GoSuite extends munit.FunSuite:
         pos = if t.move == pos.passIndex then pass(pos) else play(pos, t.move)
       assert(pos.over, s"$size: ${pos.moves} moves")
   }
+
+  test("while the model thinks: a working screen with the board, Menu its way out — the game left, no move made") {
+    val thinking = Play(app(), Act.press("Play White against the model"), Act.press("9 × 9 — a quick game"))
+    assert(thinking.seen.contains("Go"), thinking.seen.toString)
+    val left = Play(app(), Act.press("Play White against the model"), Act.press("9 × 9 — a quick game"),
+      Act.leave("Menu"))
+    assertEquals(left.at.map(_.title), Some("Go"))
+    assert(left.at.get.buttons.exists(_.label == "Two players"), "back at the menu")
+  }
