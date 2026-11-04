@@ -9,6 +9,19 @@ final class Fast private (val geo: Geometry, val board: Array[Int], var toPlay: 
   private val near = geo.near
   def copy(): Fast = Fast(geo, board.clone(), toPlay, ko, passes, last)
 
+  // THE EMPTY POINTS, a list kept as stones come and go: a random move picked from it, not from every point
+  private val empties = new Array[Int](geo.count)
+  private val where = Array.fill(geo.count)(-1)
+  private var nEmpty = 0
+  locally { var p = 0; while p < geo.count do { if board(p) == Empty then emptied(p); p += 1 } }
+  private def emptied(p: Int): Unit = { where(p) = nEmpty; empties(nEmpty) = p; nEmpty += 1 }
+  private def filled(p: Int): Unit =
+    val i = where(p); val moved = empties(nEmpty - 1)
+    empties(i) = moved; where(moved) = i; nEmpty -= 1; where(p) = -1
+  private def swap(i: Int, j: Int): Unit =
+    val a = empties(i); val b = empties(j)
+    empties(i) = b; where(b) = i; empties(j) = a; where(a) = j
+
   private val mark = new Array[Int](geo.count)
   private var stamp = 0
   private val stack = new Array[Int](geo.count)
@@ -37,14 +50,14 @@ final class Fast private (val geo: Geometry, val board: Array[Int], var toPlay: 
   /** the group at `p` taken off: how many stones, and the last one's point */
   private def take(p: Int): (Int, Int) =
     val c = board(p); var top = 0; var n = 0; var lastStone = p
-    stack(top) = p; top += 1; board(p) = Empty
+    stack(top) = p; top += 1; board(p) = Empty; emptied(p)
     while top > 0 do
       top -= 1
       val q = stack(top); n += 1; lastStone = q
       val ns = near(q); var i = 0
       while i < ns.length do
         val m = ns(i)
-        if board(m) == c then { board(m) = Empty; stack(top) = m; top += 1 }
+        if board(m) == c then { board(m) = Empty; emptied(m); stack(top) = m; top += 1 }
         i += 1
     (n, lastStone)
 
@@ -60,6 +73,7 @@ final class Fast private (val geo: Geometry, val board: Array[Int], var toPlay: 
       if board(n) == o && libs(n, 1) == 0 then { val (k, l) = take(n); taken += k; lastTaken = l }
       i += 1
     if taken == 0 && libs(p, 1) == 0 then { board(p) = Empty; return false }
+    filled(p)
     ko = if taken == 1 && alone(p) then lastTaken else -1
     toPlay = o; passes = 0; last = p
     true
@@ -115,17 +129,17 @@ final class Fast private (val geo: Geometry, val board: Array[Int], var toPlay: 
   /** whether a stone of the side to play at `p` would leave its group (of two stones or more) with one liberty, not
    * capturing: the liberties it would have counted up to two */
   def selfAtari(p: Int): Boolean =
-    if captures(p) then return false
+    // the cheap look first: two empty neighbours, or no friend to join, and it is not a self-atari
     val c = toPlay; val ns = near(p)
     var free = 0; var friends = false; var i = 0
-    var seen1 = -1
     while i < ns.length do
       val n = ns(i)
-      if board(n) == Empty then { if n != seen1 then { free += 1; seen1 = n } }
+      if board(n) == Empty then free += 1
       else if board(n) == c then friends = true
       i += 1
     if free >= 2 then return false
     if !friends then return false // a lone stone in atari is a throw-in, not a mistake as such
+    if captures(p) then return false
     board(p) = c
     val n = libs(p, 2)
     board(p) = Empty
@@ -157,14 +171,14 @@ final class Fast private (val geo: Geometry, val board: Array[Int], var toPlay: 
         i += 1
     randomMove(r)
 
-  private val cands = new Array[Int](geo.count)
+  /** a random empty point that is not an own eye, a self-atari refused nine times in ten: tried from the list of
+   * empty points, a refused one moved past the part still to try */
   def randomMove(r: scala.util.Random): Int =
-    var k = 0; var p = 0
-    while p < geo.count do { if board(p) == Empty && !eye(p, toPlay) then { cands(k) = p; k += 1 }; p += 1 }
+    var k = nEmpty
     while k > 0 do
-      val i = r.nextInt(k); val q = cands(i)
-      if (!selfAtari(q) || r.nextInt(10) == 0) && play(q) then return q
-      k -= 1; cands(i) = cands(k)
+      val i = r.nextInt(k); val q = empties(i)
+      if !eye(q, toPlay) && (!selfAtari(q) || r.nextInt(10) == 0) && play(q) then return q
+      k -= 1; swap(i, k)
     pass(); -1
 
   /** at a playout's end: Black's points less White's and komi — a stone its colour's, an empty point the colour of
@@ -201,6 +215,9 @@ final class Searcher(pos: Rules.Position, r: scala.util.Random, heavy: Boolean =
   import Searcher.*
   private val geo = pos.geo
   private val start = Fast.of(pos)
+  /** virtual games of a prior: more on a large board, where a move's shape says more than a few games do — set before
+   * the root's moves are given theirs */
+  private val virtual = if geo.size >= 13 then 20 else Virtual
   val root: Node = Node(-1, Rules.other(pos.toPlay), null)
   root.children = priors(start, Rules.legal(pos).filterNot(p => start.eye(p, pos.toPlay)), 0)
   root.children.nn.foreach(_.parent = root)
@@ -210,7 +227,9 @@ final class Searcher(pos: Rules.Position, r: scala.util.Random, heavy: Boolean =
 
   /** what is known of each move before any game: a few virtual games, their share by what the move does */
   private def priors(f: Fast, moves: Seq[Int], depth: Int): Array[Node] =
-    val opening = f.board.count(_ != Empty) < geo.count / 8
+    val stones = f.board.count(_ != Empty)
+    val opening = stones < geo.count / 8
+    val big = geo.size >= 13
     moves.map { m =>
       val node = Node(m, f.toPlay, null)
       if knowing then
@@ -220,13 +239,39 @@ final class Searcher(pos: Rules.Position, r: scala.util.Random, heavy: Boolean =
         else if f.saves(m) then p = 0.75
         else if f.selfAtari(m) then p = 0.15
         else if f.ataris(m) then p = 0.6
-        if line == 0 then p -= 0.15
-        if opening && (line == 2 || line == 3) then p += 0.1
-        if opening && line == 1 then p -= 0.05
+        if line == 0 then p -= (if big then 0.25 else 0.15)
+        if opening && (line == 2 || line == 3) then p += (if big then 0.15 else 0.1)
+        if opening && line == 1 then p -= (if big then 0.15 else 0.05)
         if f.last >= 0 && near(m, f.last) then p += 0.05
-        node.n = Virtual; node.wins = Virtual * math.max(0.02, math.min(0.98, p))
+        if big && opening then
+          // THE OPENING ON A LARGE BOARD: the empty corners first, then the sides; no contact without a reason; not
+          // the far centre
+          val (r, c) = (m / geo.size, m % geo.size)
+          val corner = math.min(r, geo.size - 1 - r) <= 5 && math.min(c, geo.size - 1 - c) <= 5
+          if corner && (line == 2 || line == 3) && emptyAround(f, m, 3) then p += 0.05
+          if touches(f, m) && p <= 0.55 then p -= 0.05
+          if line >= 5 && emptyAround(f, m, 3) then p -= 0.05
+        // the prior in both estimates: RAVE's too, or RAVE (most of the value while a move has few games of its own)
+        // would hide it
+        val share = math.max(0.02, math.min(0.98, p))
+        node.n = virtual; node.wins = virtual * share
+        node.raveN = virtual; node.raveWins = virtual * share
       node
     }.toArray
+
+  /** no stone within `d` points (by rows and columns) of `m` */
+  private def emptyAround(f: Fast, m: Int, d: Int): Boolean =
+    val (r, c) = (m / geo.size, m % geo.size)
+    var a = math.max(0, r - d); var ok = true
+    while ok && a <= math.min(geo.size - 1, r + d) do
+      var b = math.max(0, c - d)
+      while ok && b <= math.min(geo.size - 1, c + d) do
+        if f.board(a * geo.size + b) != Empty then ok = false
+        b += 1
+      a += 1
+    ok
+  /** a stone of either colour next to `m` */
+  private def touches(f: Fast, m: Int): Boolean = geo.near(m).exists(f.board(_) != Empty)
 
   private def near(a: Int, b: Int): Boolean =
     math.abs(a / geo.size - b / geo.size) <= 2 && math.abs(a % geo.size - b % geo.size) <= 2
@@ -248,7 +293,7 @@ final class Searcher(pos: Rules.Position, r: scala.util.Random, heavy: Boolean =
     var going = true
     while going do
       if node.children == null then
-        if node.n > (if knowing then Virtual else 0) || (node eq root) then
+        if node.n > (if knowing then virtual else 0) || (node eq root) then
           val moves = geo.points.filter(p => f.board(p) == Empty && !f.eye(p, f.toPlay))
           val kids = priors(f, moves, 1)
           kids.foreach(_.parent = node)
@@ -267,7 +312,7 @@ final class Searcher(pos: Rules.Position, r: scala.util.Random, heavy: Boolean =
             if first(best.move) == 0 then first(best.move) = best.colour
             if best.parent == null then best.parent = node
             node = best
-            going = node.n > (if knowing then Virtual else 0)
+            going = node.n > (if knowing then virtual else 0)
           else node.children = kids.filterNot(_ eq best) // illegal here (a ko or a suicide): gone
     var steps = 0
     while f.passes < 2 && steps < moveCap do

@@ -54,22 +54,32 @@ stones are not marked: they are captured before passing, the board counted as it
 
 Monte-Carlo tree search with RAVE and prior knowledge, on a fast board of any size (`Fast`: arrays, marks, simple ko).
 
+- The fast board keeps a list of its empty points (a random move picked from it, not from every point), and a
+  self-atari is looked for only when the cheap look (two empty neighbours, no friend) does not settle it: on the JVM
+  ~22 000 games a second on 9 × 9, ~4 900 on 19 × 19 (2 170 before).
 - A game played out: down the tree by the best estimate — the share of wins mixed with RAVE's share for the same move
   anywhere later (weight sqrt(800 / (3n + 800))), plus 0.2·sqrt(ln N / n) — then by the playout policy to the end:
   a capture next to the last move; else an own group next to it saved from atari; else at random, no own eye filled,
   a self-atari refused nine times in ten. Scored by stones and eyes, komi the board's.
-- Prior knowledge: a new node's moves start with 8 virtual games, their share by what the move does — a capture 0.8,
-  saving a group 0.75, a self-atari 0.15, an atari 0.6, else 0.5; the first line −0.15; in the opening the third and
-  fourth lines +0.1, the second −0.05; near the last move +0.05. The root's moves are the exact rules' (superko).
+- Prior knowledge: a new node's moves start with virtual games (8; 20 on 13 × 13 and 19 × 19) in BOTH estimates —
+  the share of wins and RAVE's, else RAVE, most of the value while a move has few games, hides it — their share by
+  what the move does: a capture 0.8, saving a group 0.75, a self-atari 0.15, an atari 0.6, else 0.5; the first line
+  −0.15 (−0.25 on a large board); in the opening the third and fourth lines +0.1 (+0.15), the second −0.05 (−0.15);
+  near the last move +0.05. THE OPENING ON A LARGE BOARD (operator, 2026-11-04: "strange moves on 19 × 19"): an empty
+  corner's third or fourth line +0.05, a contact without a tactical reason −0.05, the far centre −0.05. The root's
+  moves are the exact rules' (superko).
 - The answer (`Model.answer`): the point played most. A pass when nothing is worth playing, when the opponent has
   passed and the board as it stands is won, or when its chance is under 4% after 500 games.
 - In the page (`Thinking`, `Model` into `Async.cancellable`): parts of ~25 ms between the page's frames until the
   board's budget (`Model.budget`): at
-  most 30 000 games, and 1.5 s on 9 × 9, 3 s on 13 × 13, 5 s on 19 × 19. Measured in Chromium: ~11 000 games a move
-  on 9 × 9 in 1.5 s, ~4 800 on 19 × 19 in 5 s.
+  most 30 000 games, and 1.5 s on 9 × 9, 3 s on 13 × 13, 5 s on 19 × 19. Measured in Chromium: ~17 500 games a move
+  on 9 × 9 in 1.5 s, ~12 500 on 19 × 19 in 5 s (11 000 and 4 800 before the empty points' list).
 - Measured against the search before it (MCTS-RAVE, light playouts, no priors) on 9 × 9: at 400 games a move 27 of 30
   (25 of 30 before the atari priors; without priors 14 of 30 — the priors are most of it); at 2000 games 14 of 20;
   heavy playouts against light at 2000 games 13 of 20; at the page's budgets (12 000 games against its 4000) 9 of 10.
+- After "strange moves on 19 × 19": on 19 × 19 at 300 ms a move the faster search with the opening knowledge won 3 of 3
+  against the one before (that one opened on the second line, the first line and the centre: S2, L19, F10); the priors
+  given to RAVE too won 16 of 20 on 9 × 9 at 400 games and 3 of 4 on 19 × 19 at 300 ms against the priors without.
 - Checked: `GoSuite` — the model's moves legal to the end of whole games on 9 × 9 and 13 × 13; its thought shown; it
   passes on a won board after the opponent's pass. `scripts/e2e.scala` times its replies in Chromium on 9 × 9 and
   19 × 19.
