@@ -37,3 +37,13 @@ Notes as it runs (2026-11-04):
   published. WebKit's WebGL2 on the Mac, a batch of 8: ours 7 / 11 / 7 ms, b10c128 20 / 15 / 21 ms.
 - Next, if ours is to beat the teacher at equal time: a larger student (6 x 96 or 10 x 64), targets from the teacher's
   search (PUCT visits) rather than its raw policy, longer. First: the XR's numbers for ?selftest&net=own.
+
+## In flight: BACKLOG 6, round 2 — a larger student (started 2026-11-04 ~17:40)
+
+- [ ] 6 x 96 (pooling channels a quarter: 24), from scratch, 100 000 steps, to nets/own-6x96.bin (`--out=`);
+  `sbt "train/runMain okay.go.train.Distill 100000 6 96 --out=nets/own-6x96.bin"`, the log train/target/distill.log
+  (resume: `--resume=<step>` with the same --out). ~2 x the 6 x 64's time a step.
+- [ ] Measured as round 1: agreement; Match at 100/100 and at its speed's visits; WebKit's selftest.
+- [ ] Better than round 1 at equal time → the page's ?net=own; better than b10c128 at equal time → the default.
+- Then, if capacity is not the limit: targets from the teacher's search (PUCT visits on a quarter of the moves,
+  KataGo's playout cap randomisation), round 3.

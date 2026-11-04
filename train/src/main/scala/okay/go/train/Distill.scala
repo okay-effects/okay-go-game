@@ -30,8 +30,11 @@ object Distill:
     val base = Plan()
     val plan = base.copy(steps = nums.lift(0).getOrElse(base.steps), blocks = nums.lift(1).getOrElse(base.blocks),
       channels = nums.lift(2).getOrElse(base.channels), resume = args.exists(_.startsWith("--resume")),
-      start = args.find(_.startsWith("--resume=")).map(_.drop(9).toInt).getOrElse(0))
-    run(plan)
+      start = args.find(_.startsWith("--resume=")).map(_.drop(9).toInt).getOrElse(0),
+      out = args.find(_.startsWith("--out=")).map(_.drop(6)).getOrElse(base.out))
+    // the channels through global pooling: a quarter of the trunk's (KataGo's 32 of 128), 16 at least
+    val sized = plan.copy(pooled = math.max(16, plan.channels / 4))
+    run(sized)
 
   def kindsOf(blocks: Int): Vector[Boolean] = Vector.tabulate(blocks)(i => i % 3 == 2)
 
