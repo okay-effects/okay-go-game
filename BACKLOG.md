@@ -38,3 +38,8 @@ In the operator's order (2026-11-04: "write everything in the backlog and do it 
    same format; measured against KataGo's.
 7. [ ] Step 5: okay-inlay — the legal-move mask (and liberties) as weights of the network: no illegal move without
    outside code (Wordle's step 5 in Go).
+   (user, 2026-11-04) Before 7: 6b. THE NETWORK ON WEBGL2 where WebGPU is missing — an iPhone XR stops at iOS 18.7, whose
+   Safari has no WebGPU (`navigator.gpu` missing; every iPhone browser is WebKit), but has WebGL2 with float render
+   targets: the same layers as fragment shaders over float textures (a conv as a sum over its taps), for our own
+   smaller network first (6 x 64: few enough for an old phone); checked = `Forward` by `?selftest`; the page
+   chooses WebGPU, else WebGL2, else the search that plays games out, and the engine panel says which.
