@@ -37,8 +37,11 @@ object Binary:
     val _ = (ints, floats)
     bb.array()
 
-  def read(bytes: Array[Byte]): Model =
-    val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+  def read(bytes: Array[Byte]): Model = read(ByteBuffer.wrap(bytes))
+
+  /** from a buffer of the bytes — in a page, an `ArrayBuffer` wrapped as is (`TypedArrayBuffer.wrap`) */
+  def read(buffer: ByteBuffer): Model =
+    val bb = buffer.order(ByteOrder.LITTLE_ENDIAN)
     def i(): Int = bb.getInt()
     def f(n: Int): Array[Float] = Array.fill(n)(bb.getFloat())
     def conv(name: String): Conv =

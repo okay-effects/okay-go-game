@@ -32,6 +32,8 @@ lazy val net = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Full).i
   .dependsOn(core)
   .settings(name := "okay-go-game-net", publish / skip := true, libraryDependencies += munit.value,
     Test / fork := true, Test / javaOptions += "-Xmx4g", Test / baseDirectory := (ThisBuild / baseDirectory).value)
+  .jvmSettings(run / fork := true, run / baseDirectory := (ThisBuild / baseDirectory).value,
+    run / javaOptions += "-Xmx4g")
 
 /** THE PAGE: okay-ui's screens on okay-faces' Laminar face */
 lazy val app = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Pure).in(file("app"))
@@ -48,6 +50,9 @@ lazy val app = crossProject(JVMPlatform, JSPlatform).crossType(CrossType.Pure).i
       val out = target.value / "web"
       IO.copyFile(baseDirectory.value.getParentFile / "web" / "index.html", out / "index.html")
       IO.copyFile(from, out / "main.js")
+      // the network's weights, written by `netJVM/runMain okay.go.net.WriteBinary`, beside the script
+      val weights = (ThisBuild / baseDirectory).value / "nets" / "b10c128.bin"
+      if (weights.exists) IO.copyFile(weights, out / "net" / "b10c128.bin")
       streams.value.log.info(s"the page: ${out / "index.html"}")
       out
     })

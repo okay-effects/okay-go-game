@@ -45,6 +45,8 @@ final class Puct(root: Position, judge: Position => Judgement, c: Double = 1.1, 
     var w = 0.0
     var children: Array[Node] | Null = null
     var moves: Array[Int] = Array.empty
+    /** waiting for its judgement, in a batch */
+    var pending = false
     def q: Double = if n == 0 then 0 else w / n
 
   val top: Node = Node(root, 1f)
@@ -56,43 +58,72 @@ final class Puct(root: Position, judge: Position => Judgement, c: Double = 1.1, 
     val blackWins = b > w
     if (pos.toPlay == Black) == blackWins then 1.0 else -1.0
 
-  private def expand(node: Node): Double =
-    val j = judge(node.pos)
+  private def expandBy(node: Node, j: Judgement): Double =
     val legal = Rules.legal(node.pos) :+ node.pos.passIndex
     node.moves = legal.toArray
     node.children = legal.map(m => Node(null, j.priors(m))).toArray
     j.value
 
-  /** `n` more visits */
+  /** `n` more visits, each judged at once */
   def run(n: Int): Unit =
     var left = n
-    while left > 0 do { one(); left -= 1; visits += 1 }
+    while left > 0 do
+      gather(1).foreach(p => complete(p, judge(p.leaf.pos)))
+      left -= 1
 
-  private def one(): Unit =
-    var path = List(top); var node = top
-    var value = 0.0; var done = false
-    while !done do
-      if node.pos.over then { value = scored(node.pos); done = true }
-      else if node.children == null then { value = expand(node); done = true }
-      else
-        val kids = node.children.nn
-        val sqrtN = math.sqrt(math.max(1, node.n).toDouble)
-        val parentQ = if node.n == 0 then 0.0 else -node.q // from the view of the side to move at `node`
-        var best = 0; var bv = Double.NegativeInfinity; var i = 0
-        while i < kids.length do
-          val k = kids(i)
-          val q = if k.n == 0 then parentQ - fpu else k.q
-          val v = q + c * k.prior * sqrtN / (1 + k.n)
-          if v > bv then { bv = v; best = i }
-          i += 1
-        val k = kids(best)
-        if k.pos == null then
-          val m = node.moves(best)
-          val next = if m == node.pos.passIndex then Rules.pass(node.pos) else Rules.play(node.pos, m)
-          kids(best) = Node(next, k.prior)
-        node = kids(best)
-        path = node :: path
-    // `value` is for the side to move at the leaf; each node keeps it from its chooser's view
+  /** A LEAF TO JUDGE, its path from the root (the leaf first) */
+  final class Leaf(val path: List[Node], val leaf: Node)
+
+  /** up to `max` leaves to judge together: each chosen with a VIRTUAL LOSS on its path, so the next is another; a
+   * finished game scored at once; stopped at a leaf already waiting */
+  def gather(max: Int): Vector[Leaf] =
+    val out = Vector.newBuilder[Leaf]; var count = 0; var stop = false; var tries = 0
+    while count < max && !stop && tries < 4 * max do
+      tries += 1
+      var path = List(top); var node = top; top.n += 1
+      var walking = true
+      while walking do
+        if node.pos.over then
+          walking = false
+          backup(path, scored(node.pos)); visits += 1; count += 1
+        else if node.children == null then
+          walking = false
+          if node.pending then { unwind(path); stop = true }
+          else { node.pending = true; out += Leaf(path, node); count += 1 }
+        else
+          val kids = node.children.nn
+          val sqrtN = math.sqrt(math.max(1, node.n).toDouble)
+          val parentQ = if node.n == 0 then 0.0 else -node.q
+          var best = 0; var bv = Double.NegativeInfinity; var i = 0
+          while i < kids.length do
+            val k = kids(i)
+            val q = if k.n == 0 then parentQ - fpu else k.q
+            val v = q + c * k.prior * sqrtN / (1 + k.n)
+            if v > bv then { bv = v; best = i }
+            i += 1
+          val k = kids(best)
+          if k.pos == null then
+            val m = node.moves(best)
+            val next = if m == node.pos.passIndex then Rules.pass(node.pos) else Rules.play(node.pos, m)
+            kids(best) = Node(next, k.prior)
+          node = kids(best)
+          node.n += 1; node.w -= 1 // the virtual loss, from the chooser's view
+          path = node :: path
+    out.result()
+
+  /** the virtual losses of a path taken back */
+  private def unwind(path: List[Node]): Unit =
+    for p <- path do { p.n -= 1; if !(p eq top) then p.w += 1 }
+
+  /** a leaf's judgement: its children by the policy, its value backed up */
+  def complete(l: Leaf, j: Judgement): Unit =
+    l.leaf.pending = false
+    backup(l.path, expandBy(l.leaf, j))
+    visits += 1
+
+  /** `value` for the side to move at the path's leaf, backed up, the path's virtual losses taken back */
+  private def backup(path: List[Node], value: Double): Unit =
+    unwind(path)
     var v = -value
     for p <- path do { p.n += 1; p.w += v; v = -v }
 

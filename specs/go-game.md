@@ -150,3 +150,13 @@ Step 2, done: `Puct` (priors from the policy, the value at the leaves, c = 1.1, 
 finished game scored by the rules, the most visited move — among equals the network's own choice). With 30
 evaluations a move it beat the present MCTS at 17 500 playouts (its page budget) in 8 of 8 games on 9 × 9, margins
 13.5 to 44.5 (JVM, CPU).
+
+Step 3, done: the network in the page. `GpuNet` (net/js): the weights (`Binary`, nets/b10c128.bin written by
+`WriteBinary` at publishing, served beside main.js as net/b10c128.bin, 12 MB) in WebGPU buffers; the forward pass as
+WGSL kernels (`Kernels`: a direct convolution a thread per output, batchnorm+ReLU, channel bias, global and value
+pooling, small matmuls), a batch of positions a pass, a plan of dispatches per (batch, board size). `?selftest`
+checks it against the CPU reference in the same page: the largest difference 1.3e-5 on 9 x 9, 13 x 13 and 19 x 19;
+a batch of 8 in 14 / 22 / 38 ms on Apple Metal 3 (the CPU reference in Scala.js 194 / 395 / 813 ms a position).
+The page's model (`NetThinking`): PUCT with leaves gathered in batches of 8 (virtual loss), for 1.5 s / 2.5 s / 4 s;
+the network loaded at the first move it thinks of; without WebGPU the search that plays games out. In Chromium
+~560–690 positions read a move on 9 x 9, ~410 on 19 x 19 (the CPU's inputs the limit there: BACKLOG 5b).

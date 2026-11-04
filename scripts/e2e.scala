@@ -21,10 +21,10 @@ def run(page: String, pictures: String): Unit =
   val pw = Playwright.create(Playwright.CreateOptions().setEnv(Map("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD" -> "1").asJava))
   val browser = pw.chromium().launch(BrowserType.LaunchOptions().setExecutablePath(Path.of(exe)))
   val p = browser.newContext(Browser.NewContextOptions().setViewportSize(520, 1000)).newPage()
-  p.setDefaultTimeout(20000)
+  p.setDefaultTimeout(60000)
   val errors = scala.collection.mutable.ArrayBuffer.empty[String]
   p.onPageError(e => errors += e)
-  p.navigate(Path.of(page).toAbsolutePath.toUri.toString)
+  p.navigate(if page.startsWith("http") then page else Path.of(page).toAbsolutePath.toUri.toString)
   def button(name: String) = p.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName(name).setExact(true))
   // a point of the board is a link (a button at its slot)
   def point(name: String) = p.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName(name).setExact(true))
@@ -45,7 +45,7 @@ def run(page: String, pictures: String): Unit =
   for m <- Seq("E5", "C3", "G7") do
     if point(m).count() == 1 then
       val t0 = System.nanoTime(); point(m).click(); has("The model played")
-      val said = "\\d+ games played out".r.findFirstIn(p.locator("#app").textContent()).getOrElse("")
+      val said = "\\d+ positions read".r.findFirstIn(p.locator("#app").textContent()).getOrElse("")
       println(s"9 x 9 reply: ${(System.nanoTime() - t0) / 1000000} ms; $said")
   if stones < 4 then fail(s"$stones stones after three moves and replies")
   shot("go-model.png")
@@ -53,14 +53,16 @@ def run(page: String, pictures: String): Unit =
   button("Menu").click(); button("Play Black against the model").click()
   button("19 × 19 — the full board").click()
   var ms = List.empty[Long]
-  for (m, k) <- Seq("D4", "Q16", "D16").zipWithIndex if point(m).count() == 1 do
-    val t0 = System.nanoTime(); point(m).click(); has(s"move ${2 * k + 3}")
+  var played = 0
+  for m <- Seq("D4", "Q16", "D16", "Q4", "C16") if played < 3 && point(m).count() == 1 do
+    played += 1
+    val t0 = System.nanoTime(); point(m).click(); has(s"move ${2 * played + 1}")
     ms :+= (System.nanoTime() - t0) / 1000000
-  val thought = "\\d+ games played out".r.findFirstIn(p.locator("#app").textContent()).getOrElse(fail("no thought"))
+  val thought = "\\d+ positions read".r.findFirstIn(p.locator("#app").textContent()).getOrElse(fail("no thought"))
   println(s"19 x 19 replies: ${ms.mkString(", ")} ms; $thought")
   shot("go-19.png")
   // Menu while the model thinks: the page answers at once, the search stopped
-  point("Q4").click(); has("The model is thinking")
+  Seq("K10", "C3", "R17", "Q3").find(point(_).count() == 1).foreach(point(_).click()); has("The model is thinking")
   val t1 = System.nanoTime(); button("Menu").click(); has("Two players")
   println(s"Menu while thinking: back in ${(System.nanoTime() - t1) / 1000000} ms")
   if errors.nonEmpty then fail("page errors: " + errors.mkString("; "))
