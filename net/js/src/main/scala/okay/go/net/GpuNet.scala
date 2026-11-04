@@ -10,7 +10,11 @@ import scala.scalajs.js.typedarray.*
  * dispatch with its bind group, built once — then each run writes the inputs, encodes the plan, and reads back the
  * policy, the pass and the value. The order of the work is `Forward`'s, kernel for step (`Kernels`).
  */
-final class GpuNet private (device: js.Dynamic, model: Model)(using ExecutionContext):
+final class GpuNet private (device: js.Dynamic, model: Model, val adapter: String, val f16: Boolean)(using
+    ExecutionContext):
+  /** the bytes of the device's buffers: the weights, and the rest (activations, uniforms) */
+  var weightBytes = 0L
+  var otherBytes = 0L
   private val STORAGE = 0x80; private val COPY_DST = 0x08; private val COPY_SRC = 0x04; private val UNIFORM = 0x40
   private val MAP_READ = 0x01
 
@@ -21,10 +25,12 @@ final class GpuNet private (device: js.Dynamic, model: Model)(using ExecutionCon
   private val biasP = pipeline(Kernels.channelBias); private val poolP = pipeline(Kernels.pool)
   private val matP = pipeline(Kernels.matmul)
 
-  private def buffer(floats: Int, usage: Int): js.Dynamic =
+  private def buffer(floats: Int, usage: Int, kept: Boolean = true): js.Dynamic =
+    if kept then otherBytes += math.max(16, floats * 4)
     device.createBuffer(literal(size = math.max(16, floats * 4), usage = usage))
   private def upload(a: Array[Float]): js.Dynamic =
-    val b = buffer(a.length, STORAGE | COPY_DST)
+    val b = buffer(a.length, STORAGE | COPY_DST, kept = false)
+    weightBytes += math.max(16, a.length * 4)
     device.queue.writeBuffer(b, 0, a.toTypedArray)
     b
   // the weights, each array once, by the layer it belongs to
@@ -41,6 +47,7 @@ final class GpuNet private (device: js.Dynamic, model: Model)(using ExecutionCon
   private val plans = scala.collection.mutable.Map.empty[(Int, Int), Plan]
 
   private def uniform(words: Int*): js.Dynamic =
+    otherBytes += 32
     val b = device.createBuffer(literal(size = 32, usage = UNIFORM | COPY_DST))
     val u = new Uint32Array(8); words.zipWithIndex.foreach((w, i) => u(i) = w)
     device.queue.writeBuffer(b, 0, u)
@@ -115,8 +122,9 @@ final class GpuNet private (device: js.Dynamic, model: Model)(using ExecutionCon
       val wg = (s.threads + 63) / 64
       if wg <= 65535 then pass.dispatchWorkgroups(wg) else pass.dispatchWorkgroups(65535, (wg + 65534) / 65535)
     pass.end()
-    val readP = buffer(batch * a, MAP_READ | COPY_DST); val readS = buffer(batch, MAP_READ | COPY_DST)
-    val readV = buffer(batch * 3, MAP_READ | COPY_DST)
+    val readP = buffer(batch * a, MAP_READ | COPY_DST, kept = false)
+    val readS = buffer(batch, MAP_READ | COPY_DST, kept = false)
+    val readV = buffer(batch * 3, MAP_READ | COPY_DST, kept = false)
     enc.copyBufferToBuffer(p.policy, 0, readP, 0, batch * a * 4)
     enc.copyBufferToBuffer(p.pass, 0, readS, 0, batch * 4)
     enc.copyBufferToBuffer(p.value, 0, readV, 0, batch * 3 * 4)
@@ -142,14 +150,19 @@ object GpuNet:
       if adapter == null then Future.successful(None)
       else
         val limits = adapter.limits
+        val info = adapter.info
+        def field(k: String) = if js.isUndefined(info) || js.isUndefined(info.selectDynamic(k)) then "" else
+          info.selectDynamic(k).toString
+        val name = Seq(field("vendor"), field("architecture"), field("description")).filter(_.nonEmpty).mkString(" ")
+        val f16 = adapter.features.has("shader-f16").asInstanceOf[Boolean]
         adapter.requestDevice(literal(requiredLimits = literal(
           maxStorageBufferBindingSize = limits.maxStorageBufferBindingSize,
           maxBufferSize = limits.maxBufferSize))).asInstanceOf[js.Promise[js.Dynamic]].toFuture
-          .map(d => Some(GpuNet(d, model)))
+          .map(d => Some(GpuNet(d, model, if name.isEmpty then "a GPU" else name, f16)))
     }
 
-  /** the model's bytes fetched from `url` and read */
-  def load(url: String)(using ExecutionContext): Future[Model] =
+  /** the model's bytes fetched from `url` and read: the model, and how many bytes it came in */
+  def load(url: String)(using ExecutionContext): Future[(Model, Int)] =
     g.fetch(url).asInstanceOf[js.Promise[js.Dynamic]].toFuture
       .flatMap(r => r.arrayBuffer().asInstanceOf[js.Promise[ArrayBuffer]].toFuture)
-      .map(ab => Binary.read(TypedArrayBuffer.wrap(ab)))
+      .map(ab => (Binary.read(TypedArrayBuffer.wrap(ab)), ab.byteLength))

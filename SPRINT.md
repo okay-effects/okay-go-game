@@ -1,4 +1,4 @@
 # SPRINT — okay-go-game
 
-In flight: BACKLOG 5b — the network's inputs fast enough in the page that the GPU, not the CPU, sets the pace on
-19 x 19 (now ~410 positions a move in 4 s; the GPU alone ~850).
+Nothing in flight. Done 2026-11-04: BACKLOG 5c (the engine's information at the bottom of the game) and 5b (the CPU
+no longer the limit: one scan a leaf, a pipeline). Next: BACKLOG 5d — the GPU kernels.

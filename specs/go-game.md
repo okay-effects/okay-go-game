@@ -160,3 +160,16 @@ a batch of 8 in 14 / 22 / 38 ms on Apple Metal 3 (the CPU reference in Scala.js 
 The page's model (`NetThinking`): PUCT with leaves gathered in batches of 8 (virtual loss), for 1.5 s / 2.5 s / 4 s;
 the network loaded at the first move it thinks of; without WebGPU the search that plays games out. In Chromium
 ~560–690 positions read a move on 9 x 9, ~410 on 19 x 19 (the CPU's inputs the limit there: BACKLOG 5b).
+
+5c, done: the engine's information at the bottom of the game's screen, after the model's move ("The engine"): the
+model (KataGo g170 b10c128: blocks, channels, weights, CC0), where it runs (WebGPU and the adapter, f16 or not; or
+the CPU fallback and why), the weights (MB, load time), the GPU memory its buffers take (weights and the rest), and
+the move's numbers (positions read, a second, batches) with a batch's time on the GPU, its inputs on the CPU, the
+tree's. The handler says it (`Thought.about`); the program shows it.
+
+5b, done: the CPU no longer the limit. `Scan` (core): a position scanned once on arrays — chains, liberties, the
+legal points and the ko points by Zobrist hashes (the rules' superko by hashes too; equal to the game's boards on
+8 838 positions, `ScanSuite`) — for the inputs, the judgement and the expansion. A pipeline: the next batch gathered
+and prepared while the GPU reads one. The batch 16 on 9 x 9, 8 on larger boards. On 19 x 19 the CPU's part of a batch
+from 21.5 + 14 ms to 0.6 + 3 ms; positions a move from ~430 to up to ~800 (390–800 with the GPU shared by other
+work); on 9 x 9 up to ~1 150.

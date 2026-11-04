@@ -8,7 +8,7 @@ trait Handles[E[_]]:
   def apply[R[_], Rest[_], A](p: A ! R)(using Split[E, R, Rest]): A ! Rest
 
 /** what the model answers: the point it plays (or the position's pass index), and what it thinks, in words */
-final case class Thought(move: Int, note: String)
+final case class Thought(move: Int, note: String, about: List[(String, String)] = Nil)
 
 /** THE MODEL, as an effect: given a position, its move. Which model answers, how long it thinks, and whether it
  * answers at once (a test's) or later (a page's, by okay-scala's `Async`) is a handler's */

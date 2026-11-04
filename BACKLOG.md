@@ -15,9 +15,21 @@ In the operator's order (2026-11-04: "write everything in the backlog and do it 
    time per move like the present one; e2e in Chromium; published.
    Done 2026-11-04: WebGPU equal to the CPU reference to 1.3e-5 (`?selftest`); a batch of 8 in 14 ms (9 x 9), 38 ms
    (19 x 19) on Apple Metal 3; in play ~560–690 positions read a move on 9 x 9 in 1.5 s, ~410 on 19 x 19 in 4 s.
-5b. [ ] NOW: the inputs' speed in the page — on 19 x 19 the CPU's inputs (ladders, Benson's area: Scala collections)
+5c. [x] (operator, 2026-11-04) The engine's information at the bottom of the game's screen — which model runs
+   (KataGo g170 b10c128: blocks, channels, weights, licence), whether on WebGPU (the adapter, f16) or the CPU
+   fallback, the weights' size and load time, the GPU memory the buffers take, and for the last move: positions read,
+   positions a second, the time of a batch on the GPU and of its inputs on the CPU, the search's settings.
+5b. [x] The inputs' speed in the page — on 19 x 19 the CPU's inputs (ladders, Benson's area: Scala collections)
    cost more than the GPU's pass (~410 positions a move where the GPU would read ~850): arrays, the area and ladders
    kept between a node and its children where they can be; measured in Chromium.
+   Done: one `Scan` a leaf (chains, liberties, legal points and ko by Zobrist hashes, equal to the boards on 8 838
+   positions) for the inputs, the judgement and the expansion; the rules' superko by hashes too; a pipeline (the
+   next batch prepared while the GPU reads one); the batch 16 on 9 x 9, 8 on larger boards. 19 x 19: the CPU's part
+   of a batch 21.5 + 14 ms -> 0.6 + 3 ms; ~430 -> up to ~800 positions a move (the GPU shared with other work on
+   this Mac: 390–800); 9 x 9 up to ~1 150. The GPU is now the limit.
+5d. [ ] NEXT: the GPU kernels faster on 19 x 19 — the convolution tiled in workgroup memory (inputs and weights
+   shared by a workgroup), maybe f16 where the adapter has it (checked against the reference); measured by
+   `?selftest`.
 6. [ ] Step 4: a network of our own, trained on the Mac by mlx-scala (supervised on games the search plays), in the
    same format; measured against KataGo's.
 7. [ ] Step 5: okay-inlay — the legal-move mask (and liberties) as weights of the network: no illegal move without

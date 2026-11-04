@@ -1,6 +1,6 @@
 package okay.go.net
 
-import okay.go.Rules
+import okay.go.{Rules, Scan}
 import okay.go.Rules.{Black, Board, Empty, Position, White}
 
 /**
@@ -14,7 +14,11 @@ import okay.go.Rules.{Black, Board, Empty, Position, White}
  *   14 whether a pass would end the game; 18 the komi's parity wave; the rest 0.
  */
 object Inputs:
-  def of(pos: Position): (Array[Float], Array[Float]) =
+  def of(pos: Position): (Array[Float], Array[Float]) = of(Scan(pos))
+
+  /** from a scan of the position, made once for the search too */
+  def of(scan: Scan): (Array[Float], Array[Float]) =
+    val pos = scan.pos
     val n = pos.size; val area = n * n
     val pla = pos.toPlay; val opp = Rules.other(pla)
     val b = pos.board
@@ -24,14 +28,13 @@ object Inputs:
     for p <- 0 until area do
       set(0, p)
       if b(p) == pla then set(1, p) else if b(p) == opp then set(2, p)
-    val chains = Chains(b, n)
     for p <- 0 until area if b(p) != Empty do
-      chains.liberties(p) match
+      scan.libertiesAt(p) match
         case 1 => set(3, p)
         case 2 => set(4, p)
         case 3 => set(5, p)
         case _ => ()
-    for p <- 0 until area if b(p) == Empty && Rules.tryPlay(pos, p) == Left(Rules.Why.Repeats) do set(6, p)
+    scan.repeats.foreach(set(6, _))
     // the last five moves, alternating by colour as a game's do
     val history = math.min(5, pos.record.size)
     for k <- 1 to history do
@@ -40,7 +43,7 @@ object Inputs:
     // ladders now, a move ago, two moves ago
     Ladders.iterate(b, n, Ladders.koPoint(pos)) { (p, working) =>
       set(14, p)
-      if b(p) == opp && Chains(b, n).liberties(p) > 1 then working.foreach(set(17, _))
+      if b(p) == opp && scan.libertiesAt(p) > 1 then working.foreach(set(17, _))
     }
     val prev = if history < 1 then b else pos.boardAgo(1)
     val prevPrev = if history < 2 then prev else pos.boardAgo(2)

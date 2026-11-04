@@ -30,10 +30,12 @@ object Rules:
       case Suicide => "the stone would have no liberty"
       case Repeats => "it repeats a position (ko)"
 
-  /** A POSITION: the board, who plays, every board seen (no repeat), passes in a row, stones captured by each colour,
-   * the last move */
+  /** A POSITION: the board, who plays, passes in a row, stones captured by each colour, the last move; the moves
+   * played and the last two boards (a network's inputs); the board's Zobrist hash and the hashes of every board seen
+   * (positional superko). `seen` is kept for old callers: the hashes decide */
   final case class Position(board: Board, toPlay: Int, seen: Set[Board], passes: Int, captured: Map[Int, Int],
-      last: Option[Int], moves: Int, record: Vector[Int] = Vector.empty, boards: List[Board] = Nil):
+      last: Option[Int], moves: Int, record: Vector[Int] = Vector.empty, boards: List[Board] = Nil,
+      hash: Long = 0L, hashes: Set[Long] = Set(0L)):
     def over: Boolean = passes >= 2
     def geo: Geometry = Rules.geo(board)
     def size: Int = geo.size
@@ -60,15 +62,25 @@ object Rules:
         val (stones, libs) = group(nb, n)
         if libs.isEmpty then { stones.foreach(s => nb = nb.updated(s, Empty)); taken += stones.size }
       if group(nb, p)._2.isEmpty then Left(Why.Suicide)
-      else if pos.seen(nb) then Left(Why.Repeats)
+      else if pos.hashes.contains(hashAfter(pos, p, nb)) then Left(Why.Repeats)
       else Right((nb, taken))
+
+  /** the Zobrist hash of `nb`, the board after a stone at `p`: the position's, the stone's word, the captured's */
+  private def hashAfter(pos: Position, p: Int, nb: Board): Long =
+    val geo = pos.geo
+    var h = pos.hash ^ geo.z(p, pos.toPlay)
+    for q <- pos.board.indices if pos.board(q) != Empty && nb(q) == Empty do h ^= geo.z(q, pos.board(q))
+    h
 
   def legal(pos: Position): Vector[Int] = pos.geo.points.filter(tryPlay(pos, _).isRight).toVector
 
   def play(pos: Position, p: Int): Position = tryPlay(pos, p) match
-    case Right((nb, taken)) => Position(nb, other(pos.toPlay), pos.seen + nb, 0,
+    case Right((nb, taken)) =>
+      val h = hashAfter(pos, p, nb)
+      // the boards seen are kept by their hashes (`hashes`); `seen` stays the first board's, for old callers
+      Position(nb, other(pos.toPlay), pos.seen, 0,
         pos.captured.updated(pos.toPlay, pos.captured(pos.toPlay) + taken), Some(p), pos.moves + 1, pos.record :+ p,
-        (pos.board :: pos.boards).take(2))
+        (pos.board :: pos.boards).take(2), h, pos.hashes + h)
     case Left(why) => throw IllegalArgumentException(s"${pos.name(p)}: ${why.text}")
 
   def pass(pos: Position): Position = pos.copy(toPlay = other(pos.toPlay), passes = pos.passes + 1, last = None,
@@ -101,3 +113,51 @@ object Rules:
   def result(b: Board): String =
     val (black, white) = score(b)
     if black > white then f"Black wins by ${black - white}%.1f" else f"White wins by ${white - black}%.1f"
+
+/**
+ * A POSITION SCANNED ONCE, on arrays: each stone's chain, each chain's liberties and hash; then which points the
+ * side to move may play — empty, not suicide, and the board after it not one seen (by its Zobrist hash) — the same
+ * answer as `Rules.legal`, without making a board for every point. For a search that asks it of every position.
+ */
+final class Scan(val pos: Rules.Position):
+  import Rules.Empty
+  private val geo = pos.geo
+  private val n = geo.count
+  val board: Array[Int] = pos.board.toArray
+  /** each stone's chain (its first stone found), -1 for an empty point */
+  val chain: Array[Int] = Array.fill(n)(-1)
+  /** by chain: its liberties and the xor of its stones' words */
+  val liberties: Array[Int] = new Array[Int](n)
+  private val chainHash = new Array[Long](n)
+  locally {
+    val stack = new Array[Int](n); val seen = Array.fill(n)(-1)
+    for s <- 0 until n if board(s) != Empty && chain(s) < 0 do
+      val c = board(s); var top = 0; var libs = 0; var h = 0L
+      stack(top) = s; top += 1; chain(s) = s
+      while top > 0 do
+        top -= 1
+        val q = stack(top); h ^= geo.z(q, c)
+        for m <- geo.near(q) do
+          if board(m) == Empty then { if seen(m) != s then { seen(m) = s; libs += 1 } }
+          else if board(m) == c && chain(m) < 0 then { chain(m) = s; stack(top) = m; top += 1 }
+      liberties(s) = libs; chainHash(s) = h
+  }
+  def libertiesAt(p: Int): Int = if chain(p) < 0 then 0 else liberties(chain(p))
+
+  /** why a stone of the side to move at an empty `p` may not be played: 0 legal, 1 suicide, 2 a repeated board */
+  private def refusal(p: Int): Int =
+    val c = pos.toPlay; val o = Rules.other(c)
+    var free = false; var safe = false; var h = pos.hash ^ geo.z(p, c)
+    var taken = List.empty[Int]
+    for q <- geo.near(p) do
+      if board(q) == Empty then free = true
+      else if board(q) == c then { if liberties(chain(q)) > 1 then safe = true }
+      else if board(q) == o && liberties(chain(q)) == 1 && !taken.contains(chain(q)) then
+        taken = chain(q) :: taken; h ^= chainHash(chain(q))
+    if !free && !safe && taken.isEmpty then 1
+    else if pos.hashes.contains(h) then 2
+    else 0
+  /** the legal points, in order */
+  lazy val legal: Vector[Int] = (0 until n).filter(p => board(p) == Empty && refusal(p) == 0).toVector
+  /** the empty points a stone may not be played for repeating a board (ko) */
+  lazy val repeats: Vector[Int] = (0 until n).filter(p => board(p) == Empty && refusal(p) == 2).toVector

@@ -26,7 +26,7 @@ object Selftest:
     def say(s: String): Unit = { out.textContent = out.textContent + s + "\n"; println(s) }
     val now = () => dom.window.performance.now()
     (for
-      model <- GpuNet.load("net/b10c128.bin")
+      (model, _) <- GpuNet.load("net/b10c128.bin")
       gpu <- GpuNet.create(model)
       _ = say(s"model: ${model.parameters} parameters; WebGPU: ${gpu.isDefined}")
       _ <- gpu.fold(Future.unit) { net =>

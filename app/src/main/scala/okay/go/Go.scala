@@ -93,7 +93,9 @@ object Go:
     val next = if legal then Rules.play(pos, t.move) else Rules.pass(pos)
     val note = Part.details("The model played" -> (if legal then pos.name(t.move) else "pass"),
       "The model thinks" -> t.note)
-    if next.over then end[R](mode, next, None) else defer(turn[R](mode, next, List(note)))
+    // how the model works, at the bottom: which model, on what, and the last move's numbers (the handler's words)
+    val engine = if t.about.isEmpty then Nil else List(Part.section("The engine")(Part.details(t.about*)))
+    if next.over then end[R](mode, next, None) else defer(turn[R](mode, next, note :: engine))
 
   /** the end: by two passes — the score by area, each point's owner drawn — or by a resignation */
   def end[R[_]: Has[Ui]](mode: Mode, pos: Position, resigned: Option[Int]): Unit ! R =

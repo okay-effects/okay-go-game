@@ -5,14 +5,18 @@ import okay.go.Rules.{Black, Position}
 
 /** what a network says of a position, ready for a search: a prior for every point and, last, the pass (0 where not
  * legal), and the value for the side to move, from -1 (lost) to 1 (won) */
-final case class Judgement(priors: Array[Float], value: Double)
+final case class Judgement(priors: Array[Float], value: Double, legal: Option[Vector[Int]] = None)
 
 object Judgement:
   /** the network's raw outputs made a judgement as KataGo's postprocessing does: the policy's softmax over the legal
    * points and the pass; the value win minus loss, "no result" taken out (positional superko, area scoring) */
-  def of(pos: Position, raw: Raw): Judgement =
+  def of(pos: Position, raw: Raw): Judgement = of(okay.go.Scan(pos), raw)
+
+  /** from a scan of the position (its legal points), made once for the inputs too */
+  def of(scan: okay.go.Scan, raw: Raw): Judgement =
+    val pos = scan.pos
     val area = pos.board.length
-    val legal = Rules.legal(pos)
+    val legal = scan.legal
     val logits = new Array[Double](area + 1)
     java.util.Arrays.fill(logits, Double.NegativeInfinity)
     legal.foreach(p => logits(p) = raw.policy(p))
@@ -23,14 +27,15 @@ object Judgement:
     val (w, l) = (raw.value(0).toDouble, raw.value(1).toDouble)
     val m = math.max(w, l)
     val pw = math.exp(w - m); val pl = math.exp(l - m)
-    Judgement(e.map(x => (x / z).toFloat), (pw - pl) / (pw + pl))
+    Judgement(e.map(x => (x / z).toFloat), (pw - pl) / (pw + pl), Some(legal))
 
   /** a network on the CPU, as a judge */
   def by(model: Model): Position => Judgement =
     val forward = Forward(model)
     pos =>
-      val (s, g) = Inputs.of(pos)
-      of(pos, forward.run(pos.size, s, g))
+      val scan = okay.go.Scan(pos)
+      val (s, g) = Inputs.of(scan)
+      of(scan, forward.run(pos.size, s, g))
 
 /**
  * THE SEARCH WITH A NETWORK (PUCT, as AlphaZero and KataGo search): a tree of positions; a leaf judged by the network
@@ -59,7 +64,8 @@ final class Puct(root: Position, judge: Position => Judgement, c: Double = 1.1, 
     if (pos.toPlay == Black) == blackWins then 1.0 else -1.0
 
   private def expandBy(node: Node, j: Judgement): Double =
-    val legal = Rules.legal(node.pos) :+ node.pos.passIndex
+    // the judgement's legal points when it has them (a scan made once), else the rules'
+    val legal = j.legal.getOrElse(Rules.legal(node.pos)) :+ node.pos.passIndex
     node.moves = legal.toArray
     node.children = legal.map(m => Node(null, j.priors(m))).toArray
     j.value

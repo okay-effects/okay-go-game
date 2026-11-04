@@ -24,6 +24,10 @@ final class Geometry private (val size: Int):
     val at = if size >= 19 then Seq(e, mid, size - 1 - e) else Seq(e, size - 1 - e)
     (for r <- at; c <- at yield r * size + c).toSet + (mid * size + mid)
   val komi: Double = if size <= 9 then 6.5 else 7.5
+  /** a random word for each point and colour (Zobrist), so a board's hash is the xor of its stones' */
+  val zobrist: Array[Long] =
+    val r = new scala.util.Random(0x60 + size); Array.fill(2 * count)(r.nextLong())
+  def z(p: Int, colour: Int): Long = zobrist(2 * p + colour - 1)
 
 object Geometry:
   val sizes: Vector[Int] = Vector(9, 13, 19)
