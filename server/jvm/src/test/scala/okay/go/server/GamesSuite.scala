@@ -42,6 +42,22 @@ class GamesSuite extends munit.FunSuite:
     assertEquals((last(b).black, last(b).white, last(b).watching), (true, true, 1))
   }
 
+  test("an action with a key is that seat's: one socket plays both seats (the model's, or two at one screen)") {
+    val c = cloud()
+    val b = socket(c, s"key=$black&black=$black&white=$white")
+    act(c, b, Action.Move(e5))
+    await(b.send(Room.writeAction(Action.Move(d4), Some(white)))); await(c.settled())
+    assertEquals(last(b).moves, Vector(e5, d4))
+    // a key that is no seat's plays nothing; a seat's out of turn is refused
+    await(b.send(Room.writeAction(Action.Pass, Some(other)))); await(c.settled())
+    assertEquals(last(b).error, Some("a watcher cannot play"))
+    await(b.send(Room.writeAction(Action.Pass, Some(white)))); await(c.settled())
+    assertEquals(last(b).error, Some("it is Black's turn"))
+    // the game opened again by its key: the moves kept
+    val again = socket(c, s"key=$white")
+    assertEquals(last(again).moves, Vector(e5, d4))
+  }
+
   test("a move told to everyone; out of turn, a watcher's, or illegal: refused to that socket with the reason") {
     val c = cloud()
     val b = socket(c, s"key=$black&black=$black&white=$white"); val w = socket(c, s"key=$white"); val v = socket(c, "")

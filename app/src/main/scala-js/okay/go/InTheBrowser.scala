@@ -5,7 +5,7 @@ import okay.business.laminar.Laminar
 import okay.scala3.std.Async
 import org.scalajs.dom
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
-import okay.business.scala3.{+, Clipboard, Ui}
+import okay.business.scala3.{+, Clipboard, Settings, Ui}
 
 
 /** GO IN THE BROWSER: `sbt appJS/web`, then open app/.js/target/web/index.html — the screens on okay-faces' Laminar
@@ -57,14 +57,16 @@ object InTheBrowser:
       |""".stripMargin)
 
   /** the page's row: the application's, and okay-scala's `Async` — the model thinks into it */
-  type Web[X] = (Async + Ui + Model + Remote + Place + Clipboard)[X]
+  type Web[X] = (Async + Ui + Model + Remote + Place + Clipboard + Settings)[X]
 
   def main(args: Array[String]): Unit =
     if dom.window.location.search.contains("selftest") then Selftest.run(NetThinking.chosen) else page()
 
   def page(): Unit =
-    // the links copied by the browser's clipboard; games far apart over a socket; the model KataGo's network on
-    // WebGPU searched by PUCT (the search that plays games out where WebGPU is missing)
-    val world = okay.business.web.InThePage.clipboard(PageAddress()(Sockets(Sockets.server)(NetThinking(
-      NetThinking.network(NetThinking.chosen))(Go.main[Web]))))
+    // this browser's games in its local storage (under "go."); the links copied by the browser's clipboard; games
+    // kept and far apart over a socket; the model a network on WebGPU or WebGL2 searched by PUCT (the search that
+    // plays games out where neither is)
+    val page = okay.business.web.InThePage
+    val world = page.kept("go.")(page.clipboard(PageAddress()(Sockets(Sockets.server)(NetThinking(
+      NetThinking.network(NetThinking.chosen))(Go.main[Web])))))
     val _ = Async.start(Laminar.run(dom.document.getElementById("app"), skin)(world))

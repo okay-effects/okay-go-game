@@ -19,7 +19,8 @@ enum Remote[X]:
   case Join(game: String, key: Option[String], make: Option[Invite]) extends Remote[Unit]
   /** what the server says after the `after`th thing it said: answered at once when that has come already */
   case Updates(after: Int) extends Remote[Events[Seen]]
-  case Send(action: Action) extends Remote[Unit]
+  /** an action — for the seat of `key` when given (a page holding both seats), else this socket's own */
+  case Send(action: Action, key: Option[String] = None) extends Remote[Unit]
   case Leave() extends Remote[Unit]
 
 /** THE PAGE'S ADDRESS, as an effect: a game's link is its fragment (#g=<id>&k=<key>) */
@@ -79,8 +80,8 @@ final class Tables:
           seen.lastOption.filter(_.n > after).foreach(k)
           () => listeners = listeners.filterNot(_ eq l)
         }
-        case Remote.Send(a) => game.foreach { id =>
-          Room.act(games(id), seat, a) match
+        case Remote.Send(a, key) => game.foreach { id =>
+          Room.act(games(id), key.fold(seat)(games(id).seat), a) match
             case Right(next) => games += id -> next; tell(id)
             case Left(why) =>
               val g = games(id)
@@ -100,7 +101,7 @@ object Online:
     case Copy(link: String, whose: String)
     case Pass, Resign, Leave
 
-  def start[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]]: Unit ! R =
+  def start[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]: Has[Settings]]: Unit ! R =
     Go.sized[R](size => menu[Int, R]("Play a friend online", "I play Black" -> Rules.Black,
       "I play White" -> Rules.White, "Back" -> 0).flatMap {
       case 0 => pure(())
@@ -109,7 +110,7 @@ object Online:
     })
 
   /** sat at game `g` with `key` (none: watching), the game made if it is new (`made`); the page's address its link */
-  def join[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]](g: String, key: Option[String],
+  def join[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]: Has[Settings]](g: String, key: Option[String],
       made: Option[Invite]): Unit ! R =
     perform[Place](Place.Write(Map("g" -> g) ++ key.map("k" -> _))).andThen(
     perform[Remote](Remote.Join(g, key, made))).andThen(
@@ -121,7 +122,7 @@ object Online:
       Rules.other(i.colour))}: send them this link"), Part.text(s"$base#g=$g&k=${i.friend}"))) ++
       List(Part.text("Anyone can watch with this one"), Part.text(watch)))*)
 
-  def screen[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]](base: String, g: String, made: Option[Invite],
+  def screen[R[_]: Has[Ui]: Has[Remote]: Has[Place]: Has[Clipboard]: Has[Settings]](base: String, g: String, made: Option[Invite],
       seen: Option[Seen], sent: Boolean, note: Option[Part]): Unit ! R =
     perform[Remote](Remote.Updates(seen.fold(0)(_.n))).flatMap { updates =>
       val leave = Button("Leave")(Act.Leave)
@@ -157,7 +158,12 @@ object Online:
             copies(inviting) :+ leave
           Screen[Act](if game.over then "Game over" else "Go online")(parts*)(acts*)
       show(shown.until(updates.map(Act.Update(_)))).flatMap {
-        case Act.Update(s) => defer(screen[R](base, g, made, Some(s), sent = false, note))
+        case Act.Update(s) =>
+          // a player's game on this browser's list (its address: the game and the key), off it when over
+          val listed = perform[Place](Place.Read()).flatMap(ps => if s.view.seat == Room.Watch then pure(())
+            else Kept.note[R](Kept(ps.filter((k, _) => k == "g" || k == "k"), s.view.size, s.view.moves.size,
+              s.view.seat), over = s.view.game.over))
+          listed.andThen(defer(screen[R](base, g, made, Some(s), sent = false, note)))
         case Act.Copy(link, whose) => copy[R](link).flatMap(done => defer(screen[R](base, g, made, seen, sent,
           Some(if done then Part.info(s"The $whose link is copied: paste it in a message.")
             else Part.warning(s"This browser does not let the page copy: copy the $whose link from the text.")))))

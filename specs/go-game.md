@@ -195,3 +195,14 @@ On an iPhone XR (iOS 18.7.11, Safari, A12, no WebGPU) the page picks WebGL2 by i
 1.7e-5; a batch of 8 in 157 / 274 / 564 ms on 9 x 9 / 13 x 13 / 19 x 19 (b10c128; the CPU 407 / 901 / 1 975 ms a
 position) — ~75 positions a move on 9 x 9, ~55 on 19 x 19. Faster there: our smaller network (BACKLOG 6), shaders of
 eight channels a fragment, half floats (checked first).
+
+6c, done: EVERY GAME KEPT AND CONTINUED ANYWHERE. A game at one screen — against the model, or two people — is made on
+the games' server as a game far apart is, the page holding both seats' keys; every move is sent with the key of the
+seat that made it (an action may carry a key: the server seats it by the key — `Room.readKeyed`; a socket's own seat
+otherwise). Its link is the page's address: #g=…&k=… and &m=… (the model's seat, thought in whichever page has the
+game open) or &o=… (the other person's at that screen). Opened again — the same browser, another tab, a phone — the
+page waits for the moves the server keeps ("Opening the game…", Menu its way out) and goes on where it stood. Under the
+board, "Continue on another device": the link as a QR code (okay-ui's `Part.qr`) and the text, a button to copy it.
+"Continue a game" in the menu: this browser's games (`Kept`: okay-ui's `Settings` in local storage, "go.games"), the
+latest first, at most 20, the online ones too; a finished game dropped. Two pages on one game at once are not kept in
+step (each sends its moves; the server refuses one out of turn): open it in one place at a time.

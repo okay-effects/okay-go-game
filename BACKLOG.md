@@ -43,7 +43,7 @@ In the operator's order (2026-11-04: "write everything in the backlog and do it 
    targets: the same layers as fragment shaders over float textures (a conv as a sum over its taps), for our own
    smaller network first (6 x 64: few enough for an old phone); checked = `Forward` by `?selftest`; the page
    chooses WebGPU, else WebGL2, else the search that plays games out, and the engine panel says which.
-   (user, 2026-11-04) 6c. [ ] EVERY GAME KEPT AND CONTINUED ANYWHERE: a game against the model and two players at one
+   (user, 2026-11-04) 6c. [x] done 2026-11-04 (specs, "6c"). EVERY GAME KEPT AND CONTINUED ANYWHERE: a game against the model and two players at one
    screen are made on the games' server as online ones are; the page holds the other seat's key too (the link
    #g=…&k=…&m=… — the model's seat, thought in this page — or &o=… — the other person's at this screen) and sends
    that seat's moves with its key (an action may carry a key: the server seats it by the key). "Continue on another

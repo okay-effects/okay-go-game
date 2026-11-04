@@ -38,15 +38,19 @@ object Room:
       case Action.Move(p) => Rules.tryPlay(g.position, p).fold(why => Left(why.text), _ => Right(g.copy(moves =
         g.moves :+ p)))
 
-  def writeAction(a: Action): String = Json.print(a match
-    case Action.Move(p) => Json.obj("move" -> Json.Num(BigDecimal(p)))
-    case Action.Pass => Json.obj("pass" -> Json.Bool(true))
-    case Action.Resign => Json.obj("resign" -> Json.Bool(true)))
-  def readAction(text: String): Option[Action] = Descent.parse(text).toOption.collect { case o: Json.Obj => o }
-    .flatMap { o =>
+  /** an action as said on the socket — with the key of the seat it is for, when the socket's own is not that seat's
+   * (a page that holds both: the model's seat, or two people at one screen) */
+  def writeAction(a: Action, key: Option[String] = None): String = Json.print(Json.Obj((a match
+    case Action.Move(p) => Vector("move" -> Json.Num(BigDecimal(p)))
+    case Action.Pass => Vector("pass" -> Json.Bool(true))
+    case Action.Resign => Vector("resign" -> Json.Bool(true))) ++ key.map("key" -> Json.Str(_))))
+  def readAction(text: String): Option[Action] = readKeyed(text).map(_._1)
+  def readKeyed(text: String): Option[(Action, Option[String])] =
+    Descent.parse(text).toOption.collect { case o: Json.Obj => o }.flatMap { o =>
       o.get("move").collect { case Json.Num(n) if n.isValidInt && n >= 0 => Action.Move(n.toInt) }
         .orElse(o.get("pass").collect { case Json.Bool(true) => Action.Pass })
         .orElse(o.get("resign").collect { case Json.Bool(true) => Action.Resign })
+        .map(_ -> o.get("key").collect { case Json.Str(k) if wellFormed(k) => k })
     }
 
   /** the game as stored */

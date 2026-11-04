@@ -49,6 +49,15 @@ def run(page: String, pictures: String): Unit =
       println(s"9 x 9 reply: ${(System.nanoTime() - t0) / 1000000} ms; $said")
   if stones < 4 then fail(s"$stones stones after three moves and replies")
   shot("go-model.png")
+  // the game kept on the server: its address opened in another tab (another device, as far as the page knows) —
+  // the same stones, the person to play
+  val q = p.context().newPage(); q.setDefaultTimeout(60000)
+  q.navigate(p.url())
+  q.waitForFunction("() => document.body.textContent.includes('You play Black · Black to play')")
+  val there = q.locator("rect[class*='okay-mark-go-black'], rect[class*='okay-mark-go-white']").count()
+  if there != stones then fail(s"opened again: $there stones, not $stones")
+  println(s"kept: opened again in another tab with its $there stones")
+  q.close()
   // the full board against the model: its replies timed, how many games it played out
   button("Menu").click(); button("Play Black against the model").click()
   button("19 × 19 — the full board").click()

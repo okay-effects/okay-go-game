@@ -8,8 +8,9 @@ import okay.go.Go.App
  * buttons — two players, and a person against the model, whose every move is legal */
 class GoSuite extends munit.FunSuite:
   /** the application with its world: the model a search of `playouts` games, no game far apart, no address */
-  def app(playouts: Int = 200, seed: Int = 1): Step[Unit] = steps(copiedTo(scala.collection.mutable.Buffer.empty[String])(
-    Place.fixed()(Tables().client()(Model.searching(new scala.util.Random(seed), playouts)(Go.main[App])))))
+  def app(playouts: Int = 200, seed: Int = 1): Step[Unit] = steps(keptIn(scala.collection.mutable.Map.empty[String,
+    String])(copiedTo(scala.collection.mutable.Buffer.empty[String])(Place.fixed()(Tables().client()(
+    Model.searching(new scala.util.Random(seed), playouts)(Go.main[App]))))))
   val nine: Geometry = Geometry(9)
   def p(name: String): Int = nine.point(name).get
   /** a 9 x 9 position from moves by name, "pass" a pass */

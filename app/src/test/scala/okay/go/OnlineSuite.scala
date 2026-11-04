@@ -35,7 +35,7 @@ class OnlineSuite extends munit.FunSuite:
   /** what the programs copied, newest last */
   val copied: scala.collection.mutable.Buffer[String] = scala.collection.mutable.Buffer.empty
   def program(t: Tables#Client, place: Handles[Place]): Step[Unit] =
-    on(steps(copiedTo(copied)(place(t(Model.searching(new scala.util.Random(1), 50)(Go.main[App]))))))
+    on(steps(keptIn(scala.collection.mutable.Map.empty[String, String])(copiedTo(copied)(place(t(Model.searching(new scala.util.Random(1), 50)(Go.main[App])))))))
 
   test("a game far apart: made by Black, joined by the friend's link, watched; moves seen by all; a resignation") {
     val tables = Tables()
@@ -95,4 +95,63 @@ class OnlineSuite extends munit.FunSuite:
     black = hear(press(hear(black, a), "E5"), a)
     assert(!screen(black).buttons.exists(_.label == "Copy the friend's link"))
     assert(screen(black).buttons.exists(_.label == "Copy the watchers' link"))
+  }
+
+  /** a device of a browser whose games are in `settings`: its program, and its client of `tables` */
+  def device(tables: Tables, place: FixedPlace, settings: scala.collection.mutable.Map[String, String])
+      : (Step[Unit], Tables#Client) =
+    val c = tables.client()
+    (on(steps(keptIn(settings)(copiedTo(copied)(place(c(Model.searching(new scala.util.Random(1), 50)(
+      Go.main[App]))))))), c)
+  /** a kept game opening: the moves the server has, given to its waiting screen */
+  def opened(step: Step[Unit], c: Tables#Client): Step[Unit] = step match
+    case w: Step.Waiting[Unit, s] if w.screen.events.isDefined =>
+      assertEquals(w.screen.title, "Go"); on(w.resume(Some(c.latest.get).asInstanceOf[s]))
+    case w: Step.Waiting[?, ?] => fail(s"not opening: ${w.screen.title} ${w.screen.parts} ${w.screen.buttons.map(_.label)}")
+    case other => fail(s"not opening: $other")
+
+  test("a game against the model kept on the server: its link opens it on another device where it stood") {
+    val tables = Tables()
+    val here = Place.fixed(); val mine = scala.collection.mutable.Map.empty[String, String]
+    var a = press(press(device(tables, here, mine)._1, "Play Black against the model"), "9 × 9 — a quick game")
+    assertEquals(here.now.keySet, Set("g", "k", "m"))
+    a = press(a, "E5") // the model answers at once (a search of 50 games)
+    val g = here.now("g"); val link = here.now
+    assertEquals(tables.game(g).map(_.moves.size), Some(2))
+    assert(texts(a).exists(_.startsWith("You play Black · Black to play · move 3")), texts(a).toString)
+    assert(texts(a).exists(_.endsWith(Place.print(here.now))), "the game's own link shown")
+    // another device, the same link: the moves the server keeps, Black to play
+    val (b0, c) = device(tables, Place.fixed(here.now), scala.collection.mutable.Map.empty)
+    var b = opened(b0, c)
+    assert(texts(b).exists(_.startsWith("You play Black · Black to play · move 3")), texts(b).toString)
+    b = press(b, "D4") // played there; the model answers there
+    assertEquals(tables.game(g).map(_.moves.size), Some(4))
+    // the first device's browser lists the game; its link continues it with all four moves
+    a = press(a, "Menu")
+    a = press(a, "Continue a game")
+    assertEquals(screen(a).buttons.map(_.label), List("Against the model · you play Black · 9 × 9 · move 3", "Back"))
+    assertEquals(here.now, Map.empty[String, String]) // Menu: the game left
+    val (d0, d) = device(tables, Place.fixed(link), mine)
+    val again = opened(d0, d)
+    assert(texts(again).exists(_.startsWith("You play Black · Black to play · move 5")), texts(again).toString)
+    // a resignation ends it: off the browser's list
+    val over = press(again, "Resign")
+    assertEquals(screen(over).title, "Game over")
+    assertEquals(tables.game(g).flatMap(_.resigned), Some(Rules.Black))
+    assert(!mine.getOrElse("games", "").contains(g), "a finished game is off the list")
+  }
+
+  test("two players at one screen kept: each seat's move sent with its key; opened elsewhere at the same turn") {
+    val tables = Tables()
+    val here = Place.fixed()
+    var a = press(press(device(tables, here, scala.collection.mutable.Map.empty)._1, "Two players"), "13 × 13")
+    assertEquals(here.now.keySet, Set("g", "k", "o"))
+    a = press(press(press(a, "G7"), "C3"), "Pass")
+    val g = here.now("g")
+    assertEquals(tables.game(g).map(_.moves), Some(Vector(Geometry(13).point("G7").get,
+      Geometry(13).point("C3").get, -1)))
+    val (b0, c) = device(tables, Place.fixed(here.now), scala.collection.mutable.Map.empty)
+    val b = opened(b0, c)
+    assert(texts(b).exists(_.startsWith("White to play · move 4")), texts(b).toString)
+    assert(!screen(b).buttons.exists(_.label == "G7"), "a taken point has no button")
   }

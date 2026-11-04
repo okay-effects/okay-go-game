@@ -72,12 +72,13 @@ object Games:
       }
 
     override def message(name: String, socket: Socket, text: String): Unit ! InActor =
-      val seat = Room.seatOf(socket.tags.headOption.getOrElse(""))
-      Room.readAction(text) match
+      val own = Room.seatOf(socket.tags.headOption.getOrElse(""))
+      Room.readKeyed(text) match
         case None => refuse(name, socket, "not an action")
-        case Some(a) => load(name).flatMap {
+        case Some((a, key)) => load(name).flatMap {
           case None => refuse(name, socket, "no such game")
-          case Some(g) => Room.act(g, seat, a) match
+          // the seat: the key's, when the action brings one (a page holding both seats), else the socket's
+          case Some(g) => Room.act(g, key.fold(own)(g.seat), a) match
             case Left(why) => refuse(name, socket, why)
             case Right(next) => keep(name, next).andThen(touch(name)).andThen(tell(name, None))
         }
